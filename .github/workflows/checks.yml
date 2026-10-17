@@ -22,14 +22,21 @@ jobs:
       - run: npm ci
       - name: Lint
         run: |
+          set -o pipefail
           mkdir -p reports
           npm run lint 2>&1 | tee reports/lint.log
       - name: Typecheck
-        run: npm run check 2>&1 | tee reports/typecheck.log
+        run: |
+          set -o pipefail
+          npm run check 2>&1 | tee reports/typecheck.log
       - name: Unit and integration tests
-        run: npm test 2>&1 | tee reports/tests.log
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee reports/tests.log
       - name: Production build
-        run: npm run build 2>&1 | tee reports/build.log
+        run: |
+          set -o pipefail
+          npm run build 2>&1 | tee reports/build.log
       - name: Save check reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -51,6 +58,7 @@ jobs:
       - run: npm ci
       - name: Validate 1000 seeds per available combination
         run: |
+          set -o pipefail
           mkdir -p reports
           npm run test:generator -- --seeds=1000 2>&1 | tee reports/generator.log
       - name: Save generator report and failing seeds
