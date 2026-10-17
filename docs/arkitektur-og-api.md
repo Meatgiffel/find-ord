@@ -51,9 +51,11 @@ En banepakke indeholder `puzzle.id`, `category`, `level`, `grid`, `words`, `seed
 `Move` har et globalt unikt UUID som `id` og én af disse former:
 
 ```json
-{ "id": "<uuid>", "kind": "find", "word": "HUND", "start": { "row": 1, "col": 2 }, "end": { "row": 1, "col": 5 } }
-{ "id": "<uuid>", "kind": "hint", "word": "KAT" }
-{ "id": "<uuid>", "kind": "complete" }
+[
+  { "id": "<uuid-1>", "kind": "find", "word": "HUND", "start": { "row": 1, "col": 2 }, "end": { "row": 1, "col": 5 } },
+  { "id": "<uuid-2>", "kind": "hint", "word": "KAT" },
+  { "id": "<uuid-3>", "kind": "complete" }
+]
 ```
 
 Fund kræver en ret, tilladt linje i det gemte grid og et endnu ikke fundet målord. Hint kræver et uopdaget ord og ledigt budget. Completion kræver alle målord; serveren tæller den én gang. `409` ved overskredet hintbudget indeholder også `rejectedHintId` og `serverGame`, så klienten kan fjerne netop det afviste offlinehint og forsøge andre træk igen. Almindelige konflikter har kun `{error}`. Rækkefølgen af hændelser i batchen er betydningsfuld.
@@ -81,4 +83,4 @@ Workbox precacher appens byggede filer og bruges ikke som autoritet for baner el
 
 Det foreløbige kapacitetsmål er fem samtidige spillere på lokal hardware. [TEA-38](https://linear.app/team-vre/issue/TEA-38/tilfoj-driftsstatus-og-mal-kapacitet-pa-lokal-hardware) skal beskrive referencehardware, belastningsmønster og faktiske svartider. Spil må ikke kræve cloud-, AI-, mail- eller eksterne API-kald; det bundtede ordregister og authentication kører lokalt.
 
-Den tidlige udgave genererer stadig baner synkront i Express, har endnu ikke idempotent enkeltbaneoprettelse, specifik eventkvittering eller versionsbundet kategoriopdelt statistik. `reconcileDownloadedGames` sletter i dag også pending events, når en pakke fjernes efter versionsskift; [TEA-44](https://linear.app/team-vre/issue/TEA-44/gem-komplette-banepakker-og-lokal-fremdrift-med-dexie) skal erstatte dette med sikker bevaring uden at vise ugyldigt børneindhold. Kontooprettelse består af Better Auth-oprettelse og efterfølgende profilindsættelse, som endnu ikke er én fælles transaktion. Det sidste og første administrator-setup følges i [TEA-13](https://linear.app/team-vre/issue/TEA-13/implementer-forste-administrator-og-oprettelse-af-separate-brugerkonti). Den eksisterende `/api/health` er kun et simpelt liveness-svar; readiness hører til TEA-38. Disse punkter er implementeringsarbejde, ikke skjulte garantier i den nuværende API.
+Den tidlige udgave genererer stadig baner synkront i Express, har endnu ikke idempotent enkeltbaneoprettelse, specifik eventkvittering eller versionsbundet kategoriopdelt statistik. Børnebaner bruger endnu den samme indbyggede temaliste som voksenbaner med en foreløbig gridkontrol; redaktionelt godkendt børneindhold mangler. `reconcileDownloadedGames` sletter i dag også pending events, når en pakke fjernes efter versionsskift; [TEA-44](https://linear.app/team-vre/issue/TEA-44/gem-komplette-banepakker-og-lokal-fremdrift-med-dexie) skal erstatte dette med sikker bevaring uden at vise ugyldigt børneindhold. Kontooprettelse består af Better Auth-oprettelse og efterfølgende profilindsættelse, som endnu ikke er én fælles transaktion. Det sidste og første administrator-setup følges i [TEA-13](https://linear.app/team-vre/issue/TEA-13/implementer-forste-administrator-og-oprettelse-af-separate-brugerkonti). Den eksisterende `/api/health` er kun et simpelt liveness-svar; readiness hører til TEA-38. Disse punkter er implementeringsarbejde, ikke skjulte garantier i den nuværende API.
