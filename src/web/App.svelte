@@ -638,14 +638,14 @@
   <meta name="description" content="Find danske ord i kategorier. Spil også offline." />
 </svelte:head>
 
-<header class="topbar">
+<header class="topbar" class:playing={!!active}>
   <div class="brand"><span class="brandmark">F<span>I</span>ND</span><small>ORDJAGT PÅ DANSK</small></div>
   {#if identity}
     <div class="top-actions"><span class="connection" class:offline={!online}>{online ? "● Forbundet" : "● Offline"}</span>{#if sessionExpired}<button class="text-button" onclick={showLogin}>Log ind igen</button>{/if}<button class="text-button" onclick={signOut} disabled={markingWord}>Log ud</button></div>
   {/if}
 </header>
 
-<main>
+<main class:playing={!!active}>
   {#if loading}
     <section class="card center"><h1>Finder dine baner…</h1></section>
   {:else if !identity}
@@ -660,10 +660,9 @@
       <p class="muted">Første administrator oprettes på serveren. Derefter kan administrator oprette flere konti.</p>
     </section>
   {:else}
-    <div class="welcome"><div><div class="eyebrow">HEJ {identity.name.toLocaleUpperCase("da-DK")}</div><h1>Find ord.</h1></div><div class="status-pill">{pending ? `${pending} afventer synkronisering` : online ? "Alt er synkroniseret" : "Gemt på enheden"}</div></div>
-    {#if identity.child}<p class="child-notice">Børneordlisten og kontrollen af skjulte ord er stadig under gennemgang. Spil sammen med en voksen i denne første udgave. Hentede baner kan fortsættes offline; ændringer i sikkerhedskontrollen tjekkes ved næste forbindelse.</p>{/if}
-
     {#if !active}
+      <div class="welcome"><div><div class="eyebrow">HEJ {identity.name.toLocaleUpperCase("da-DK")}</div><h1>Find ord.</h1></div><div class="status-pill">{pending ? `${pending} afventer synkronisering` : online ? "Alt er synkroniseret" : "Gemt på enheden"}</div></div>
+      {#if identity.child}<p class="child-notice">Børneordlisten og kontrollen af skjulte ord er stadig under gennemgang. Spil sammen med en voksen i denne første udgave. Hentede baner kan fortsættes offline; ændringer i sikkerhedskontrollen tjekkes ved næste forbindelse.</p>{/if}
       <section class="card launch-card">
         <h2>Endeløs kampagne</h2><p>Vælg en fast sværhedsgrad. Hver bane får en ny kategori, og de næste baner hentes til offlinebrug.</p>
         <div class="launch-fields"><label class="launch-label">Sværhedsgrad<select bind:value={campaignLevel} aria-describedby="campaign-directions">{#each campaignLevels() as id (id)}<option value={id}>{LEVELS[id].name} · {LEVELS[id].size} × {LEVELS[id].size}</option>{/each}</select></label></div>
@@ -707,9 +706,15 @@
         </details>
       {/if}
     {:else}
-      <section class="game-heading"><button class="back" onclick={() => { active = null; selectedStart = null; }} disabled={markingWord}>← Forside</button><div class="eyebrow">{active.campaignId ? `KAMPAGNE · BANE ${active.campaignPosition} · ` : ""}{LEVELS[active.puzzle.level].name.toLocaleUpperCase("da-DK")} · {active.puzzle.grid.length} × {active.puzzle.grid.length}</div><h1>{CATEGORIES[active.puzzle.category].name}</h1><p>Find ordene i gitteret.</p><p class="game-directions">Ordretninger: {directionDescription(active.puzzle.level)}.</p></section>
+      <section class="game-heading">
+        <button class="back" onclick={() => { active = null; selectedStart = null; }} disabled={markingWord}>← Forside</button>
+        <div class="game-title"><div class="eyebrow">{active.campaignId ? `KAMPAGNE · BANE ${active.campaignPosition} · ` : ""}{LEVELS[active.puzzle.level].name.toLocaleUpperCase("da-DK")} · {active.puzzle.grid.length} × {active.puzzle.grid.length}</div><h1>{CATEGORIES[active.puzzle.category].name}</h1></div>
+        <p class="game-status">{active.found.length} af {active.puzzle.words.length} ord · {pending ? `${pending} træk afventer synkronisering` : online ? "Synkroniseret" : "Gemt på enheden"}</p>
+        <p class="game-directions">Ordretninger: {directionDescription(active.puzzle.level)}.</p>
+        {#if identity.child}<details class="game-child-notice"><summary>Børneindhold under gennemgang</summary><p>Børneordlisten og kontrollen af skjulte ord er stadig under gennemgang. Spil sammen med en voksen i denne første udgave. Hentede baner kan fortsættes offline; ændringer i sikkerhedskontrollen tjekkes ved næste forbindelse.</p></details>{/if}
+      </section>
       <div class="game-layout" class:completed-layout={active.completed}>
-        <section class="card grid-card"><div class="grid-header"><span>{active.completed ? "BANE GENNEMFØRT" : "FIND ORDENE"}</span><span>{active.found.length} / {active.puzzle.words.length}</span></div>
+        <section class="card grid-card"><div class="grid-header"><span>{active.completed ? "BANE GENNEMFØRT" : "FIND ORDENE"}</span><span>{active.found.length} / {active.puzzle.words.length}</span><a class="word-jump" href="#word-list">Se ordlisten ↓</a></div>
           {#if active.completed}
             <div class="completion-panel" aria-live="polite">
               <h2 tabindex="-1" bind:this={completionHeading}>Bane gennemført!</h2>
@@ -724,7 +729,7 @@
               {#if !online && !active.campaignId && !nextSingleGame}<p class="completion-note">Ingen hentet bane i samme kategori og sværhedsgrad er klar. Opret forbindelse for at hente en ny.</p>{/if}
             </div>
           {/if}
-          <div class="letter-grid" style={`--size:${active.puzzle.grid.length}`} onpointerdown={pointerDown} onpointermove={pointerMove} onpointerup={pointerUp} onpointercancel={pointerCancel} onlostpointercapture={pointerCancel} role="group" aria-label="Bogstavgitter">
+          <div class="letter-grid" id="letter-grid" tabindex="-1" style={`--size:${active.puzzle.grid.length}`} onpointerdown={pointerDown} onpointermove={pointerMove} onpointerup={pointerUp} onpointercancel={pointerCancel} onlostpointercapture={pointerCancel} role="group" aria-label="Bogstavgitter">
             {#each active.puzzle.grid as row, rowIndex (rowIndex)}
               {#each row as letter, colIndex (colIndex)}
                 <button class:found-cell={foundCells.some((cell) => cell.row === rowIndex && cell.col === colIndex)} class:hint-start={shownHint?.start.row === rowIndex && shownHint?.start.col === colIndex} class:preview-cell={selectedCells.some((cell) => cell.row === rowIndex && cell.col === colIndex)} class:preview-start={previewStart?.row === rowIndex && previewStart?.col === colIndex} class:preview-end={previewEnd?.row === rowIndex && previewEnd?.col === colIndex && (previewStart?.row !== rowIndex || previewStart?.col !== colIndex)} class:rejected-cell={rejectedStart !== null && dragStart === null && selectedCells.some((cell) => cell.row === rowIndex && cell.col === colIndex)} class:tap-start={selectedStart?.row === rowIndex && selectedStart?.col === colIndex} data-row={rowIndex} data-col={colIndex} onkeydown={(event) => keyCell(event, rowIndex, colIndex)} aria-label={`Række ${rowIndex + 1}, kolonne ${colIndex + 1}, ${letter}${shownHint?.start.row === rowIndex && shownHint?.start.col === colIndex ? `, startfelt for hint til ${shownHint.word}` : ""}${selectedStart?.row === rowIndex && selectedStart?.col === colIndex ? ", valgt startfelt" : ""}`}><span>{letter}</span></button>
@@ -737,15 +742,14 @@
           <p class="grid-tip">Træk fra første til sidste bogstav, eller tryk på de to ender. Brug piletasterne på tastatur.</p>
           {#if shownHint}<p class="hint-location">Hint til {shownHint.word}: begynd i række {shownHint.start.row + 1}, kolonne {shownHint.start.col + 1}. Det blå felt viser starten.</p>{/if}
           {#if selectionFeedback}<p class="selection-feedback">{selectionFeedback}</p>{/if}
-        </section>
-        <aside class="card word-card"><div class="grid-header"><span>ORDLISTE</span><span>{active.found.length} / {active.puzzle.words.length}</span></div><div class="words">
-          {#each active.puzzle.words as word (word)}<div class:found={active.found.includes(word)} class:hinted={shownHint?.word === word}><span class="check">{active.found.includes(word) ? "✓" : ""}</span><span>{word}</span><span class="hintmark">{active.hints.includes(word) ? "· hint" : ""}</span></div>{/each}
-          </div>
           {#if !active.completed}
             <div class="hint-controls"><button class="secondary hint-button" onclick={hint} disabled={hintSaving || hintsRemaining(active.puzzle.level, active.hints) === 0}>Vis et hint</button><span>Hints tilbage: {hintsRemaining(active.puzzle.level, active.hints)}/{HINT_LIMIT[active.puzzle.level]}</span></div>
             {#if hintsRemaining(active.puzzle.level, active.hints) === 0}<p class="hint-explanation">Alle hints på denne bane er brugt.</p>{/if}
           {/if}
-          <div class="local-status">{pending ? `${pending} træk venter på synkronisering` : online ? "Synkroniseret" : "Gemt på enheden"}</div>
+        </section>
+        <aside class="card word-card" id="word-list" tabindex="-1"><div class="grid-header"><span>ORDLISTE</span><span>{active.found.length} / {active.puzzle.words.length}</span><a class="grid-jump" href="#letter-grid">Til gitteret ↑</a></div><div class="words">
+          {#each active.puzzle.words as word (word)}<div class:found={active.found.includes(word)} class:hinted={shownHint?.word === word}><span class="check">{active.found.includes(word) ? "✓" : ""}</span><span>{word}</span><span class="hintmark">{active.hints.includes(word) ? "· hint" : ""}</span></div>{/each}
+          </div>
         </aside>
       </div>
     {/if}

@@ -388,32 +388,42 @@ main {
   color: #87958c !important;
 }
 .game-heading {
-  position: relative;
-  text-align: center;
-  margin-bottom: 27px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px 18px;
+  margin-bottom: 14px;
 }
 .game-heading .back {
-  position: absolute;
-  left: 0;
-  top: 3px;
+  min-height: 44px;
+  padding: 0 4px 0 0;
 }
+.game-title { min-width: 0; }
 .game-heading h1 {
-  font-size: 3rem;
-  margin: 10px 0;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  margin: 2px 0 0;
 }
-.game-heading p {
-  font-size: 0.87rem;
-  color: #74877c;
-}
-.game-heading .game-directions {
-  display: inline-block;
-  margin: 0;
-  padding: 7px 12px;
-  border-radius: 8px;
-  background: #edf5ea;
-  color: #254e3f;
+.game-heading .game-status {
+  margin: 0 0 0 auto;
+  color: #496959;
+  font-size: 0.78rem;
   font-weight: 700;
 }
+.game-heading .game-directions {
+  flex-basis: 100%;
+  margin: 0;
+  color: #536b5f;
+  font-size: 0.76rem;
+}
+.game-child-notice {
+  flex-basis: 100%;
+  font-size: 0.76rem;
+  color: #536b5f;
+}
+.game-child-notice summary { cursor: pointer; font-weight: 700; }
+.game-child-notice p { margin: 6px 0 0; line-height: 1.5; }
+.topbar.playing { height: 64px; }
+main.playing { padding-top: 18px; }
 .game-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 260px;
@@ -433,6 +443,7 @@ main {
   color: #7f9687;
   margin-bottom: 17px;
 }
+.word-jump, .grid-jump { display: none; }
 .letter-grid {
   display: grid;
   position: relative;
@@ -535,12 +546,14 @@ main {
   letter-spacing: 0;
 }
 .hint-button {
-  width: 100%;
+  min-height: 44px;
 }
 .hint-controls {
-  margin-top: 25px;
-  display: grid;
-  gap: 8px;
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
 }
 .hint-controls span,
 .hint-explanation {
@@ -549,12 +562,6 @@ main {
 }
 .hint-explanation {
   margin: 8px 0 0;
-}
-.local-status {
-  margin-top: 15px;
-  color: #85988b;
-  font-size: 0.68rem;
-  text-align: center;
 }
 .completion-panel {
   margin-bottom: 20px;
@@ -622,23 +629,14 @@ input:focus-visible {
   .status-pill {
     align-self: center;
   }
-  .game-heading .back {
-    position: static;
-    display: block;
-    margin: 0 0 18px;
-  }
-  .game-heading h1 {
-    font-size: 2.5rem;
-  }
+  .topbar.playing { height: 56px; }
+  main.playing { padding-top: 12px; }
   .game-layout {
     gap: 14px;
   }
-  .word-card {
-    order: -1;
-  }
-  .completed-layout .word-card {
-    order: 0;
-  }
+  .word-jump, .grid-jump { display: inline; margin-left: auto; color: #315946; font-size: 0.75rem; letter-spacing: 0; white-space: nowrap; }
+  .word-jump:focus-visible, .grid-jump:focus-visible { outline: 3px solid #cf8352; outline-offset: 2px; }
+  #word-list, #letter-grid { scroll-margin-top: 12px; }
   .completion-actions button {
     flex: 1 1 150px;
   }
@@ -703,10 +701,15 @@ input:focus-visible {
   .grid-tip {
     font-size: 0.66rem;
   }
+  main.playing { padding-right: 10px; padding-left: 10px; }
+  .grid-card { padding: 10px; }
   .login {
     padding: 28px;
     margin-top: 12px;
   }
+  .game-heading { gap: 4px 10px; }
+  .game-heading .back { min-height: 40px; }
+  .game-heading .game-status { flex-basis: 100%; margin-left: 0; }
 }
 
 .letter-grid button.found-cell {
