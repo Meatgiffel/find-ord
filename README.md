@@ -5,6 +5,7 @@
 Find ord er en dansk ordjagt bygget med Svelte, Node.js, Better Auth og SQLite. Serveren danner baner med én kategori; en hentet bane kan spilles og afsluttes offline i den installérbare PWA. Træk synkroniseres, når serveren igen er tilgængelig.
 
 De aftalte regler og første versions afgrænsning står i [spilreglerne](docs/spilregler.md).
+Systemets moduler, aktuelle API og planlagte kontraktændringer står i [arkitektur- og API-beskrivelsen](docs/arkitektur-og-api.md).
 
 ## Status og begrænsninger
 
