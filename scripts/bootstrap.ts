@@ -1,0 +1,20 @@
+import { stdin, stdout } from "node:process";
+import { input, password as passwordPrompt } from "@inquirer/prompts";
+import { getMigrations } from "better-auth/db/migration";
+import { auth } from "../src/server/auth.js";
+import { db, migrateGameData } from "../src/server/database.js";
+
+await (await getMigrations(auth.options)).runMigrations();
+migrateGameData(db);
+const count = (db.prepare("SELECT COUNT(*) AS count FROM user").get() as { count: number }).count;
+if (count > 0) throw new Error("Administrator kan kun oprettes på en tom installation.");
+if (!stdin.isTTY) throw new Error("Kør bootstrap interaktivt i terminalen.");
+const username = (await input({ message: "Administratorens brugernavn:" })).trim();
+const name = (await input({ message: "Visningsnavn:" })).trim();
+const password = await passwordPrompt({ message: "Adgangskode (mindst 8 tegn):", mask: "*" });
+if (!/^[a-zA-Z0-9_.-]{3,30}$/.test(username) || !name || password.length < 8) throw new Error("Ugyldigt navn eller adgangskode.");
+const created = await auth.api.signUpEmail({ body: { email: `${username.toLowerCase()}@users.find-ord.invalid`, name, password, username } });
+if (!created.user) throw new Error("Administrator kunne ikke oprettes.");
+db.prepare("UPDATE user SET role = 'admin' WHERE id = ?").run(created.user.id);
+db.prepare("INSERT INTO profile (user_id, child) VALUES (?, 0)").run(created.user.id);
+stdout.write("Administrator oprettet.\n");

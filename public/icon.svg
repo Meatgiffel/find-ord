@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+  <rect width="192" height="192" rx="38" fill="#25423b"/>
+  <rect x="30" y="30" width="132" height="132" rx="12" fill="#f8f6ef"/>
+  <path d="M74 30v132M118 30v132M30 74h132M30 118h132" stroke="#c9d5c9" stroke-width="4"/>
+  <path d="M47 54l34 34 30 30 34 34" fill="none" stroke="#d68d51" stroke-width="14" stroke-linecap="round"/>
+  <text x="44" y="66" font-family="sans-serif" font-size="30" font-weight="bold" fill="#25423b">O</text>
+  <text x="88" y="110" font-family="sans-serif" font-size="30" font-weight="bold" fill="#25423b">R</text>
+  <text x="132" y="154" font-family="sans-serif" font-size="30" font-weight="bold" fill="#25423b">D</text>
+</svg>

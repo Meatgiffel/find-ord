@@ -1,0 +1,17 @@
+node_modules
+build
+dist
+data
+.git
+.env
+deploy/
+reports/
+AGENTS.md
+.github/
+.env*
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+*.cer

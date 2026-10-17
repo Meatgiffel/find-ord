@@ -1,0 +1,192 @@
+import express, { type Request, type Response } from "express";
+import { toNodeHandler, fromNodeHeaders } from "better-auth/node";
+import { getMigrations } from "better-auth/db/migration";
+import { randomBytes, randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
+import { z } from "zod";
+import { auth, authForHost, lanAuth, trustedOrigins } from "./auth.js";
+import { db, migrateGameData } from "./database.js";
+import { importBundledCor } from "./lexicon.js";
+import { achievementsForUser } from "./achievements.js";
+import { campaignsForUser, refillCampaign, startCampaign } from "./campaigns.js";
+import { applyGameEvents, GameSyncError, loadGameForUser, type GameRow } from "./game-sync.js";
+import { CATEGORIES, CATEGORY_TAG_VERSION, WORD_LIST_VERSION, availableLevels, campaignLevels, type CategoryId, type LevelId } from "../shared/words.js";
+import { makePuzzle, type Move, type Puzzle } from "../shared/game.js";
+import { VALIDATION_VERSION, validatePuzzle } from "../shared/validation.js";
+import { CHILD_POLICY_VERSION } from "../shared/safety.js";
+
+await (await getMigrations(auth.options)).runMigrations();
+migrateGameData(db);
+const corpus = await importBundledCor();
+console.log(`COR ${corpus.imported} ordformer indlæst.`);
+
+type SessionUser = { id: string; name: string; role?: string | null; username?: string | null };
+const app = express();
+app.disable("x-powered-by");
+
+function error(res: Response, status: number, message: string): void { res.status(status).json({ error: message }); }
+function originAllowed(req: Request): boolean {
+  const origin = req.get("origin");
+  return Boolean(origin && trustedOrigins.includes(origin));
+}
+async function user(req: Request, res: Response): Promise<SessionUser | null> {
+  const session = await authForHost(req.get("host")).api.getSession({ headers: fromNodeHeaders(req.headers) });
+  if (!session?.user) { error(res, 401, "Log ind for at fortsætte."); return null; }
+  return session.user as SessionUser;
+}
+function childFor(userId: string): boolean {
+  return Boolean((db.prepare("SELECT child FROM profile WHERE user_id = ?").get(userId) as { child: number } | undefined)?.child);
+}
+function serializedGame(row: GameRow) {
+  return { puzzle: JSON.parse(row.puzzle) as Puzzle, found: JSON.parse(row.found) as string[], hints: JSON.parse(row.hints) as string[], completed: Boolean(row.completed), revision: row.revision };
+}
+
+app.get("/api/health", (_req, res) => res.json({ ok: true }));
+// Account creation goes through the admin API. Better Auth's public sign-up endpoint is closed.
+app.use("/api/auth/sign-up", (_req, res) => error(res, 403, "En administrator opretter brugerkonti."));
+const authHandler = toNodeHandler(auth);
+const lanAuthHandler = lanAuth ? toNodeHandler(lanAuth) : null;
+app.all("/api/auth/*", (req, res) => {
+  if (lanAuthHandler && authForHost(req.get("host")) === lanAuth) return lanAuthHandler(req, res);
+  return authHandler(req, res);
+});
+app.use(express.json({ limit: "128kb" }));
+app.use("/api", (req, res, next) => {
+  if (req.method !== "GET" && req.method !== "HEAD" && !originAllowed(req)) return error(res, 403, "Ugyldig afsender.");
+  next();
+});
+
+app.get("/api/me", async (req, res) => {
+  const current = await user(req, res); if (!current) return;
+  res.json({ id: current.id, name: current.name, username: current.username, role: current.role, child: childFor(current.id),
+    puzzleVersions: { rules: 1, validation: VALIDATION_VERSION, words: WORD_LIST_VERSION,
+      categories: CATEGORY_TAG_VERSION, childPolicy: CHILD_POLICY_VERSION } });
+});
+
+app.get("/api/categories", async (req, res) => {
+  if (!await user(req, res)) return;
+  res.json(Object.entries(CATEGORIES).map(([id, category]) => ({ id, name: category.name, levels: availableLevels(id as CategoryId) })));
+});
+
+app.get("/api/achievements", async (req, res) => {
+  const current = await user(req, res); if (!current) return;
+  res.json(achievementsForUser(db, current.id));
+});
+
+const campaignSchema = z.object({ level: z.enum(["let", "normal", "svaer", "ekspert"]) });
+app.get("/api/campaigns", async (req, res) => {
+  const current = await user(req, res); if (!current) return;
+  res.json(campaignsForUser(db, current.id, childFor(current.id)));
+});
+app.post("/api/campaigns", async (req, res) => {
+  const current = await user(req, res); if (!current) return;
+  const parsed = campaignSchema.safeParse(req.body);
+  if (!parsed.success) return error(res, 400, "Vælg en gyldig sværhedsgrad.");
+  if (!campaignLevels().includes(parsed.data.level)) return error(res, 400, "Dette niveau er endnu ikke tilgængeligt i kampagner.");
+  try { res.json(startCampaign(db, current.id, parsed.data.level, childFor(current.id))); }
+  catch { error(res, 503, "Kampagnen kunne ikke oprettes. Prøv igen."); }
+});
+app.post("/api/campaigns/:id/refill", async (req, res) => {
+  const current = await user(req, res); if (!current) return;
+  try {
+    const result = refillCampaign(db, req.params.id, current.id, childFor(current.id));
+    if (!result) return error(res, 404, "Kampagnen blev ikke fundet.");
+    res.json(result);
+  } catch { error(res, 503, "Nye kampagnebaner kunne ikke hentes. Prøv igen."); }
+});
+
+const newGameSchema = z.object({ category: z.enum(Object.keys(CATEGORIES) as [CategoryId, ...CategoryId[]]), level: z.enum(["let", "normal", "svaer", "ekspert"]) });
+app.post("/api/games", async (req, res) => {
+  const current = await user(req, res); if (!current) return;
+  const input = newGameSchema.safeParse(req.body);
+  if (!input.success) return error(res, 400, "Vælg en gyldig kategori og sværhedsgrad.");
+  const { category, level } = input.data;
+  if (!availableLevels(category).includes(level as LevelId)) return error(res, 400, "Dette niveau er endnu ikke tilgængeligt i kategorien.");
+  const id = randomUUID();
+  let puzzle: Puzzle;
+  try { puzzle = makePuzzle(id, category, level, randomBytes(4).readUInt32BE(), childFor(current.id)); }
+  catch { return error(res, 503, "Banen kunne ikke dannes. Prøv igen."); }
+  if (validatePuzzle(puzzle)) return error(res, 503, "Banen kunne ikke valideres. Prøv igen.");
+  db.prepare("INSERT INTO game (id, user_id, category, level, puzzle) VALUES (?, ?, ?, ?, ?)")
+    .run(id, current.id, category, level, JSON.stringify(puzzle));
+  res.status(201).json({ puzzle, found: [], hints: [], completed: false, revision: 0 });
+});
+
+app.get("/api/games", async (req, res) => {
+  const current = await user(req, res); if (!current) return;
+  const rows = db.prepare("SELECT * FROM game WHERE user_id = ? ORDER BY created_at DESC LIMIT 30").all(current.id) as GameRow[];
+  const games = rows.map(serializedGame);
+  const isChild = childFor(current.id);
+  res.json(games.filter((game) => game.puzzle.child === isChild && validatePuzzle(game.puzzle) === null));
+});
+
+app.get("/api/games/:id", async (req, res) => {
+  const current = await user(req, res); if (!current) return;
+  const row = loadGameForUser(db, req.params.id, current.id);
+  if (!row) return error(res, 404, "Banen blev ikke fundet.");
+  const game = serializedGame(row);
+  if (game.puzzle.child !== childFor(current.id) || validatePuzzle(game.puzzle)) return error(res, 410, "Banen er udgået efter en ændring i ordlisten, kategorien eller sikkerhedskontrollen.");
+  res.json(game);
+});
+
+const point = z.object({ row: z.number().int().nonnegative(), col: z.number().int().nonnegative() });
+const eventSchema = z.object({
+  id: z.string().uuid(),
+  kind: z.enum(["find", "hint", "complete"]),
+  word: z.string().optional(),
+  start: point.optional(),
+  end: point.optional()
+});
+app.post("/api/games/:id/sync", async (req, res) => {
+  const current = await user(req, res); if (!current) return;
+  const parsed = z.object({ events: z.array(eventSchema).max(500) }).safeParse(req.body);
+  if (!parsed.success) return error(res, 400, "Ugyldige spilhændelser.");
+  const row = loadGameForUser(db, req.params.id, current.id);
+  if (!row) return error(res, 404, "Banen blev ikke fundet.");
+  const puzzle = JSON.parse(row.puzzle) as Puzzle;
+  if (puzzle.child !== childFor(current.id) || validatePuzzle(puzzle)) return error(res, 410, "Banen er udgået efter en ændring i ordlisten, kategorien eller sikkerhedskontrollen.");
+  try {
+    res.json(applyGameEvents(db, row, current.id, parsed.data.events as Move[]));
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : "Synkronisering mislykkedes.";
+    if (cause instanceof GameSyncError && cause.rejectedHintId) {
+      const currentRow = loadGameForUser(db, row.id, current.id)!;
+      return res.status(409).json({ error: message, rejectedHintId: cause.rejectedHintId, serverGame: serializedGame(currentRow) });
+    }
+    return error(res, 409, message);
+  }
+});
+
+const accountSchema = z.object({ username: z.string().regex(/^[a-zA-Z0-9_.-]{3,30}$/), name: z.string().trim().min(1).max(80), password: z.string().min(8), child: z.boolean() });
+app.get("/api/accounts", async (req, res) => {
+  const current = await user(req, res); if (!current) return;
+  if (current.role !== "admin") return error(res, 403, "Kun administrator kan se konti.");
+  const rows = db.prepare("SELECT u.id, u.name, u.username, u.role, COALESCE(p.child, 0) AS child FROM user u LEFT JOIN profile p ON p.user_id = u.id ORDER BY u.name").all();
+  res.json(rows);
+});
+app.post("/api/accounts", async (req, res) => {
+  const current = await user(req, res); if (!current) return;
+  if (current.role !== "admin") return error(res, 403, "Kun administrator kan oprette konti.");
+  const parsed = accountSchema.safeParse(req.body);
+  if (!parsed.success) return error(res, 400, "Udfyld navn, brugernavn og adgangskode (mindst 8 tegn).");
+  const { username, name, password, child } = parsed.data;
+  try {
+    const result = await auth.api.signUpEmail({ body: { email: `${username.toLowerCase()}@users.find-ord.invalid`, name, password, username } });
+    if (!result.user) throw new Error("Kontoen kunne ikke oprettes.");
+    db.prepare("INSERT INTO profile (user_id, child) VALUES (?, ?)").run(result.user.id, child ? 1 : 0);
+    res.status(201).json({ id: result.user.id, name, username, child });
+  } catch { error(res, 409, "Brugernavnet findes allerede, eller kontoen kunne ikke oprettes."); }
+});
+
+const buildPath = resolve("build");
+if (existsSync(buildPath)) {
+  app.use(express.static(buildPath, { index: false }));
+  app.get("*", (req, res) => {
+    if (req.path.startsWith("/api/")) return error(res, 404, "Ukendt API-kald.");
+    res.sendFile(resolve(buildPath, "index.html"));
+  });
+}
+
+const port = Number(process.env.PORT || 3000);
+app.listen(port, "0.0.0.0", () => console.log(`Find ord lytter på ${port}`));

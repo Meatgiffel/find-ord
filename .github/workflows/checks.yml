@@ -1,0 +1,71 @@
+name: Checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fast:
+    name: Lint, types, tests and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Lint
+        run: |
+          mkdir -p reports
+          npm run lint 2>&1 | tee reports/lint.log
+      - name: Typecheck
+        run: npm run check 2>&1 | tee reports/typecheck.log
+      - name: Unit and integration tests
+        run: npm test 2>&1 | tee reports/tests.log
+      - name: Production build
+        run: npm run build 2>&1 | tee reports/build.log
+      - name: Save check reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fast-check-reports
+          path: reports/*.log
+          if-no-files-found: ignore
+
+  generator:
+    name: Generator seeds
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Validate 1000 seeds per available combination
+        run: |
+          mkdir -p reports
+          npm run test:generator -- --seeds=1000 2>&1 | tee reports/generator.log
+      - name: Save generator report and failing seeds
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generator-report
+          path: |
+            reports/generator.log
+            reports/generator.json
+          if-no-files-found: ignore
+
+  release-ready:
+    name: Release checks passed
+    needs: [fast, generator]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Hurtige checks og 1000-seed-generatorvalidering er bestået."
