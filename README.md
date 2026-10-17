@@ -35,6 +35,8 @@ Første login og nye baner kræver serverkontakt. En komplet hentet bane gemmes 
 
 En kampagne holder samme sværhedsgrad og skifter kategori mellem banerne. Højst tre uafsluttede baner hentes på forhånd. Når køen er tom, kræver nye baner forbindelse. En udløbet onlinesession stopper ikke allerede hentede baner for den senest indloggede konto; nyt login kræves for synkronisering.
 
+Ved valg af sværhedsgrad og på selve banen vises de tilladte ordretninger. Når en bane er gennemført, vises resultatet ved gitteret med valg om næste eller ny bane og forside. En ny enkeltbane bruger samme kategori og sværhedsgrad. Offline åbnes kun en allerede hentet, uafsluttet bane med de samme valg; hvis der ikke er en, kræver en ny bane forbindelse. Kampagnen fortsætter med en hentet bane, hvis en er klar.
+
 Hver bane har et fast hintbudget: 1 på Let, 2 på Normal, 3 på Svær og 4 på Ekspert. Seneste hints startfelt markeres i gitteret og beskrives med ord og position i tekst, indtil ordet findes. Ældre gemte baner over grænsen beholder deres fremdrift, men kan ikke få flere hints. Ved en konflikt mellem offlineenheder afvises det hint, der overskrider banens grænse; øvrige træk forbliver i køen til nyt synkroniseringsforsøg.
 
 ## Udvikling og checks

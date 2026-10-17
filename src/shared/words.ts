@@ -56,6 +56,15 @@ export const DIRECTIONS = [
   [1, 1], [1, -1], [-1, 1], [-1, -1]
 ] as const;
 
+export function directionDescription(level: LevelId): string {
+  const allowed = DIRECTIONS.slice(0, LEVELS[level].directions);
+  if (allowed.length === 2) return "mod højre eller nedad";
+  if (allowed.length === 4) return "vandret eller lodret i begge retninger";
+  if (allowed.length === 8) return "vandret, lodret eller diagonalt i begge retninger";
+  const names = ["mod højre", "nedad", "mod venstre", "opad", "skråt ned mod højre", "skråt ned mod venstre", "skråt op mod højre", "skråt op mod venstre"];
+  return allowed.map((_, index) => names[index]).join(", ");
+}
+
 export function normalizedWord(input: string): string {
   return input.normalize("NFC").toLocaleUpperCase("da-DK");
 }

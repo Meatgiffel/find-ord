@@ -405,6 +405,15 @@ main {
   font-size: 0.87rem;
   color: #74877c;
 }
+.game-heading .game-directions {
+  display: inline-block;
+  margin: 0;
+  padding: 7px 12px;
+  border-radius: 8px;
+  background: #edf5ea;
+  color: #254e3f;
+  font-weight: 700;
+}
 .game-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 260px;
@@ -547,15 +556,21 @@ main {
   font-size: 0.68rem;
   text-align: center;
 }
-.finished {
-  margin-top: 22px;
+.completion-panel {
+  margin-bottom: 20px;
+  padding: 22px;
+  border: 2px solid #6d9a80;
+  border-radius: 14px;
   background: #edf5ea;
-  border-radius: 10px;
-  padding: 14px;
-  color: #426d53;
-  font-size: 0.84rem;
-  font-weight: 700;
+  color: #254e3f;
 }
+.completion-panel h2 { margin: 0 0 8px; font-size: 1.5rem; }
+.completion-panel h2:focus { outline: 3px solid #cf8352; outline-offset: 3px; }
+.completion-panel p { margin: 8px 0; line-height: 1.45; }
+.completion-sync, .completion-note { font-size: 0.82rem; }
+.completion-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.completion-actions button { min-height: 44px; }
+.completion-note { margin-bottom: 0 !important; }
 .toast {
   position: fixed;
   bottom: 22px;
@@ -620,6 +635,12 @@ input:focus-visible {
   }
   .word-card {
     order: -1;
+  }
+  .completed-layout .word-card {
+    order: 0;
+  }
+  .completion-actions button {
+    flex: 1 1 150px;
   }
   .words {
     grid-template-columns: repeat(3, 1fr);
@@ -769,6 +790,7 @@ input:focus-visible {
 .launch-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .launch-label { display: block; font-size: .77rem; font-weight: 700; color: #536b5f; }
 .launch-label select { display: block; width: 100%; margin-top: 7px; padding: 12px; border: 1px solid #cfdccf; border-radius: 10px; background: #fffefa; color: #25423b; font: inherit; }
+.launch-card .level-directions { margin: 10px 0 0; color: #315946; font-size: .82rem; font-weight: 700; }
 .secondary-panel { max-width: 680px; margin: 0 auto 12px; padding: 0 22px; }
 .secondary-panel summary { cursor: pointer; padding: 19px 0; font-weight: 700; }
 .secondary-panel summary span { float: right; color: #739080; font-size: .78rem; }

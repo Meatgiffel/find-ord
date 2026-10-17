@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { authClient } from "./auth.js";
   import { local, recordMove, saveGame, saveCampaign, eraseLocal, offlineSignOut, pendingServerLogout, clearPendingServerLogout, approveDownloadedGame, reconcileDownloadedGames, removeDownloadedGame, usableOffline, type DownloadedCampaign, type PuzzleVersions, type StoredCampaign, type StoredGame, type StoredIdentity } from "./storage.js";
-  import { CATEGORIES, LEVELS, availableLevels, campaignLevels, type CategoryId, type LevelId } from "../shared/words.js";
+  import { CATEGORIES, LEVELS, availableLevels, campaignLevels, directionDescription, type CategoryId, type LevelId } from "../shared/words.js";
   import { cellsBetween, findWord, HINT_LIMIT, hintsRemaining, visibleHint, wordAt, type Move, type Point, type Puzzle } from "../shared/game.js";
   import { snapDragEnd } from "./drag.js";
   import { newMoveId } from "./ids.js";
@@ -27,6 +27,8 @@
   let campaignLevel: LevelId = "let";
   let active: StoredGame | null = null;
   let pending = 0;
+  let pendingGameIds: string[] = [];
+  let completionHeading: HTMLHeadingElement | undefined;
   let dragStart: Point | null = null;
   let dragEnd: Point | null = null;
   let dragPointerId: number | null = null;
@@ -49,6 +51,7 @@
   let syncAgain = false;
   let shellReady = false;
   let hintSaving = false;
+  let markingWord = false;
 
   $: available = availableLevels(category);
   $: if (!available.includes(level)) level = available[0] ?? "let";
@@ -63,6 +66,9 @@
   $: nextCampaignGame = active?.campaignId ? games.filter((game) => game.campaignId === active?.campaignId &&
     !game.completed && (game.campaignPosition ?? 0) > (active?.campaignPosition ?? 0))
     .sort((a, b) => (a.campaignPosition ?? 0) - (b.campaignPosition ?? 0))[0] : undefined;
+  $: nextSingleGame = active && !active.campaignId ? games.find((game) => !game.campaignId && !game.completed &&
+    game.id !== active?.id && game.puzzle.category === active?.puzzle.category && game.puzzle.level === active?.puzzle.level) : undefined;
+  $: activePending = active ? pendingGameIds.includes(active.id) : false;
 
   async function api(path: string, init?: RequestInit) {
     const response = await fetch(`/api${path}`, { credentials: "include", ...init, headers: { "Content-Type": "application/json", ...init?.headers } });
@@ -72,11 +78,13 @@
   }
 
   async function refreshLocal() {
-    if (!identity) { games = []; campaigns = []; active = null; return; }
+    if (!identity) { games = []; campaigns = []; active = null; pending = 0; pendingGameIds = []; return; }
     const saved = await local.games.where("owner").equals(identity.id).reverse().sortBy("updatedAt");
     games = saved.filter((game) => usableOffline(game, identity!.child));
     campaigns = await local.campaigns.where("owner").equals(identity.id).toArray();
-    pending = await local.moves.where("owner").equals(identity.id).count();
+    const queued = await local.moves.where("owner").equals(identity.id).toArray();
+    pending = queued.length;
+    pendingGameIds = [...new Set(queued.map((move) => move.gameId))];
     if (active) active = games.find((game) => game.id === active?.id) ?? null;
   }
 
@@ -229,7 +237,7 @@
     }
     if (serverDone) await eraseLocal();
     else await offlineSignOut();
-    identity = null; serverVersions = null; sessionExpired = false; active = null; games = []; campaigns = []; pending = 0; showAccounts = false; achievements = [];
+    identity = null; serverVersions = null; sessionExpired = false; active = null; games = []; campaigns = []; pending = 0; pendingGameIds = []; showAccounts = false; achievements = [];
     message = serverDone ? "Du er logget ud." : "Du er logget ud på denne enhed. Serverudlogning sker ved næste forbindelse.";
   }
 
@@ -240,12 +248,12 @@
     message = "Log ind igen for at synkronisere dine gemte spil.";
   }
 
-  async function startGame() {
+  async function startGame(chosenCategory: CategoryId = category, chosenLevel: LevelId = level) {
     if (!identity || !online) { message = "Opret nye baner, når der er forbindelse til serveren."; return; }
     busy = true; message = "";
     try {
       if (!await refreshConnectedAccount() || !identity) return;
-      const game = await api("/games", { method: "POST", body: JSON.stringify({ category, level }) });
+      const game = await api("/games", { method: "POST", body: JSON.stringify({ category: chosenCategory, level: chosenLevel }) });
       await saveGame(identity.id, game);
       await refreshLocal();
       active = games.find((item) => item.id === game.puzzle.id) ?? null;
@@ -291,10 +299,27 @@
   }
 
   async function nextInCampaign() {
-    if (!active?.campaignId) return;
-    if (nextCampaignGame) { await chooseGame(nextCampaignGame); return; }
-    const campaign = campaigns.find((item) => item.id === active?.campaignId);
-    if (campaign) await openCampaign(campaign);
+    if (!active?.campaignId || busy) return;
+    busy = true;
+    try {
+      if (nextCampaignGame) { await chooseGame(nextCampaignGame); return; }
+      const campaign = campaigns.find((item) => item.id === active?.campaignId);
+      if (campaign) await openCampaign(campaign);
+      else message = "Kampagnen er ikke længere gemt på enheden. Gå til forsiden for at vælge en anden bane.";
+    } finally { busy = false; }
+  }
+
+  async function newSingleGame() {
+    if (!active || active.campaignId || busy) return;
+    if (!online) {
+      if (nextSingleGame) {
+        busy = true;
+        try { await chooseGame(nextSingleGame); }
+        finally { busy = false; }
+      } else message = "Ingen hentet bane i samme kategori og sværhedsgrad er klar. Opret forbindelse for at hente en ny bane.";
+      return;
+    }
+    await startGame(active.puzzle.category, active.puzzle.level);
   }
 
   async function chooseGame(game: StoredGame) {
@@ -350,7 +375,7 @@
   }
 
   async function markWord(start: Point, end: Point) {
-    if (!active || active.completed) return;
+    if (!active || active.completed || markingWord) return;
     const word = wordAt(active.puzzle, start, end);
     if (!word || active.found.includes(word)) {
       const path = cellsBetween(start, end);
@@ -362,19 +387,24 @@
       if (path) showRejection(start, end);
       return;
     }
-    const found = [...active.found, word];
-    if (!await addMove({ id: newMoveId(), kind: "find", word, start, end }, { found, hints: active.hints, completed: false })) {
-      selectionFeedback = message;
-      return;
-    }
-    if (found.length === active.puzzle.words.length && active) {
-      if (!await addMove({ id: newMoveId(), kind: "complete" }, { found, hints: active.hints, completed: true })) {
+    markingWord = true;
+    try {
+      const found = [...active.found, word];
+      if (!await addMove({ id: newMoveId(), kind: "find", word, start, end }, { found, hints: active.hints, completed: false })) {
         selectionFeedback = message;
         return;
       }
-      message = online ? "Alle ord fundet! Resultatet synkroniseres." : "Alle ord fundet! Resultatet gemmes på serveren, når der er forbindelse.";
-    } else message = `${word} fundet!`;
-    selectionFeedback = message;
+      if (found.length === active.puzzle.words.length && active) {
+        if (!await addMove({ id: newMoveId(), kind: "complete" }, { found, hints: active.hints, completed: true })) {
+          selectionFeedback = message;
+          return;
+        }
+        message = online ? "Alle ord fundet! Resultatet synkroniseres." : "Alle ord fundet! Resultatet gemmes på serveren, når der er forbindelse.";
+        await tick();
+        completionHeading?.focus();
+      } else message = `${word} fundet!`;
+      selectionFeedback = message;
+    } finally { markingWord = false; }
   }
   function submitWord(start: Point, end: Point) {
     void markWord(start, end).catch(() => {
@@ -611,7 +641,7 @@
 <header class="topbar">
   <div class="brand"><span class="brandmark">F<span>I</span>ND</span><small>ORDJAGT PÅ DANSK</small></div>
   {#if identity}
-    <div class="top-actions"><span class="connection" class:offline={!online}>{online ? "● Forbundet" : "● Offline"}</span>{#if sessionExpired}<button class="text-button" onclick={showLogin}>Log ind igen</button>{/if}<button class="text-button" onclick={signOut}>Log ud</button></div>
+    <div class="top-actions"><span class="connection" class:offline={!online}>{online ? "● Forbundet" : "● Offline"}</span>{#if sessionExpired}<button class="text-button" onclick={showLogin}>Log ind igen</button>{/if}<button class="text-button" onclick={signOut} disabled={markingWord}>Log ud</button></div>
   {/if}
 </header>
 
@@ -636,7 +666,8 @@
     {#if !active}
       <section class="card launch-card">
         <h2>Endeløs kampagne</h2><p>Vælg en fast sværhedsgrad. Hver bane får en ny kategori, og de næste baner hentes til offlinebrug.</p>
-        <div class="launch-fields"><label class="launch-label">Sværhedsgrad<select bind:value={campaignLevel}>{#each campaignLevels() as id (id)}<option value={id}>{LEVELS[id].name} · {LEVELS[id].size} × {LEVELS[id].size}</option>{/each}</select></label></div>
+        <div class="launch-fields"><label class="launch-label">Sværhedsgrad<select bind:value={campaignLevel} aria-describedby="campaign-directions">{#each campaignLevels() as id (id)}<option value={id}>{LEVELS[id].name} · {LEVELS[id].size} × {LEVELS[id].size}</option>{/each}</select></label></div>
+        <p class="level-directions" id="campaign-directions" aria-live="polite">Ordretninger: {directionDescription(campaignLevel)}.</p>
         <button class="primary start-button" onclick={startCampaignFlow} disabled={busy || !online}>{busy ? "Henter baner…" : campaigns.some((item) => item.level === campaignLevel) ? "Fortsæt kampagne →" : "Start kampagne →"}</button>
         {#if campaigns.length}
           <div class="saved-list">{#each campaigns as campaign (campaign.id)}
@@ -647,8 +678,9 @@
       </section>
       <section class="card launch-card">
         <h2>En enkelt bane</h2><p>Vælg selv kategori og sværhedsgrad.</p>
-        <div class="launch-fields"><label class="launch-label">Kategori<select bind:value={category}>{#each Object.entries(CATEGORIES) as [id, item] (id)}<option value={id}>{item.name}</option>{/each}</select></label><label class="launch-label">Sværhedsgrad<select bind:value={level}>{#each available as id (id)}<option value={id}>{LEVELS[id].name} · {LEVELS[id].size} × {LEVELS[id].size}</option>{/each}</select></label></div>
-        <button class="primary start-button" onclick={startGame} disabled={busy || !online}>{busy ? "Danner bane…" : "Start bane →"}</button>
+        <div class="launch-fields"><label class="launch-label">Kategori<select bind:value={category}>{#each Object.entries(CATEGORIES) as [id, item] (id)}<option value={id}>{item.name}</option>{/each}</select></label><label class="launch-label">Sværhedsgrad<select bind:value={level} aria-describedby="single-directions">{#each available as id (id)}<option value={id}>{LEVELS[id].name} · {LEVELS[id].size} × {LEVELS[id].size}</option>{/each}</select></label></div>
+        <p class="level-directions" id="single-directions" aria-live="polite">Ordretninger: {directionDescription(level)}.</p>
+        <button class="primary start-button" onclick={() => startGame()} disabled={busy || !online}>{busy ? "Danner bane…" : "Start bane →"}</button>
         {#if !online}<p class="muted">Nye baner kræver forbindelse. Hentede baner kan spilles offline.</p>{/if}
       </section>
       <details class="card secondary-panel"><summary>Gemte enkeltbaner <span>{games.filter((game) => !game.campaignId).length}</span></summary>
@@ -675,9 +707,23 @@
         </details>
       {/if}
     {:else}
-      <section class="game-heading"><button class="back" onclick={() => { active = null; selectedStart = null; }}>← Forside</button><div class="eyebrow">{active.campaignId ? `KAMPAGNE · BANE ${active.campaignPosition} · ` : ""}{LEVELS[active.puzzle.level].name.toLocaleUpperCase("da-DK")} · {active.puzzle.grid.length} × {active.puzzle.grid.length}</div><h1>{CATEGORIES[active.puzzle.category].name}</h1><p>Find ordene i gitteret. {active.puzzle.level === "let" ? "Ordene står mod højre eller nedad." : active.puzzle.level === "normal" ? "Ordene står vandret eller lodret i begge retninger." : "Ordene kan stå vandret, lodret og skråt i begge retninger."}</p></section>
-      <div class="game-layout">
+      <section class="game-heading"><button class="back" onclick={() => { active = null; selectedStart = null; }} disabled={markingWord}>← Forside</button><div class="eyebrow">{active.campaignId ? `KAMPAGNE · BANE ${active.campaignPosition} · ` : ""}{LEVELS[active.puzzle.level].name.toLocaleUpperCase("da-DK")} · {active.puzzle.grid.length} × {active.puzzle.grid.length}</div><h1>{CATEGORIES[active.puzzle.category].name}</h1><p>Find ordene i gitteret.</p><p class="game-directions">Ordretninger: {directionDescription(active.puzzle.level)}.</p></section>
+      <div class="game-layout" class:completed-layout={active.completed}>
         <section class="card grid-card"><div class="grid-header"><span>{active.completed ? "BANE GENNEMFØRT" : "FIND ORDENE"}</span><span>{active.found.length} / {active.puzzle.words.length}</span></div>
+          {#if active.completed}
+            <div class="completion-panel" aria-live="polite">
+              <h2 tabindex="-1" bind:this={completionHeading}>Bane gennemført!</h2>
+              <p>Du fandt {active.found.length} af {active.puzzle.words.length} ord.</p>
+              <p class="completion-sync">{activePending ? "Resultatet er gemt på enheden og afventer synkronisering." : "Resultatet er gemt."}</p>
+              <div class="completion-actions">
+                {#if active.campaignId}<button class="primary" onclick={nextInCampaign} disabled={busy}>Næste bane →</button>
+                {:else}<button class="primary" onclick={newSingleGame} disabled={busy}>{busy ? "Henter bane…" : "Ny bane →"}</button>{/if}
+                <button class="secondary" onclick={() => { active = null; selectedStart = null; }}>Forside</button>
+              </div>
+              {#if !online && active.campaignId && !nextCampaignGame}<p class="completion-note">Ingen hentet næste bane er klar. Opret forbindelse for at hente flere.</p>{/if}
+              {#if !online && !active.campaignId && !nextSingleGame}<p class="completion-note">Ingen hentet bane i samme kategori og sværhedsgrad er klar. Opret forbindelse for at hente en ny.</p>{/if}
+            </div>
+          {/if}
           <div class="letter-grid" style={`--size:${active.puzzle.grid.length}`} onpointerdown={pointerDown} onpointermove={pointerMove} onpointerup={pointerUp} onpointercancel={pointerCancel} onlostpointercapture={pointerCancel} role="group" aria-label="Bogstavgitter">
             {#each active.puzzle.grid as row, rowIndex (rowIndex)}
               {#each row as letter, colIndex (colIndex)}
@@ -695,7 +741,7 @@
         <aside class="card word-card"><div class="grid-header"><span>ORDLISTE</span><span>{active.found.length} / {active.puzzle.words.length}</span></div><div class="words">
           {#each active.puzzle.words as word (word)}<div class:found={active.found.includes(word)} class:hinted={shownHint?.word === word}><span class="check">{active.found.includes(word) ? "✓" : ""}</span><span>{word}</span><span class="hintmark">{active.hints.includes(word) ? "· hint" : ""}</span></div>{/each}
           </div>
-          {#if active.completed}<div class="finished">✦ Flot klaret! Alle ord er fundet.</div>{#if active.campaignId}<button class="primary start-button" onclick={nextInCampaign}>{nextCampaignGame ? "Næste kampagnebane →" : online ? "Hent næste bane →" : "Forbind for at hente flere baner"}</button>{/if}{:else}
+          {#if !active.completed}
             <div class="hint-controls"><button class="secondary hint-button" onclick={hint} disabled={hintSaving || hintsRemaining(active.puzzle.level, active.hints) === 0}>Vis et hint</button><span>Hints tilbage: {hintsRemaining(active.puzzle.level, active.hints)}/{HINT_LIMIT[active.puzzle.level]}</span></div>
             {#if hintsRemaining(active.puzzle.level, active.hints) === 0}<p class="hint-explanation">Alle hints på denne bane er brugt.</p>{/if}
           {/if}
