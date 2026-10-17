@@ -43,7 +43,7 @@ Hver bane har et fast hintbudget: 1 på Let, 2 på Normal, 3 på Svær og 4 på 
 
 ## Udvikling og checks
 
-Node.js 22 og npm kræves til lokal udvikling:
+Node.js 22 og npm 10 kræves til lokal udvikling (`.nvmrc` og `package.json` angiver versionerne):
 
 ```sh
 npm ci
