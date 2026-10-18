@@ -13,6 +13,9 @@ services:
       LOG_LEVEL: "${LOG_LEVEL:-info}"
       GAME_CREATION_LIMIT: "${GAME_CREATION_LIMIT:-60}"
       TRUST_PROXY: "${TRUST_PROXY:-}"
+      GENERATION_QUEUE_LIMIT: "${GENERATION_QUEUE_LIMIT:-8}"
+      GENERATION_TIMEOUT_MS: "${GENERATION_TIMEOUT_MS:-3000}"
+      PUZZLE_CACHE_LIMIT: "${PUZZLE_CACHE_LIMIT:-300}"
     stop_grace_period: 15s
     volumes:
       - find-ord-data:/app/data
