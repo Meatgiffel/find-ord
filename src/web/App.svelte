@@ -43,6 +43,9 @@
   let newName = "";
   let newPassword = "";
   let newChild = false;
+  let currentPassword = "";
+  let nextPassword = "";
+  let changingPassword = false;
   let showAccounts = false;
   let achievements: Achievement[] = [];
   let newAchievements: Achievement[] = [];
@@ -664,6 +667,17 @@
     } finally { syncing = false; }
   }
 
+  async function changePassword() {
+    changingPassword = true;
+    try {
+      const result = await authClient.changePassword({ currentPassword, newPassword: nextPassword, revokeOtherSessions: true });
+      if (result.error) throw new Error(result.error.status === 400 ? "Den nuværende adgangskode er forkert, eller den nye er for kort." : "Adgangskoden kunne ikke ændres.");
+      currentPassword = ""; nextPassword = "";
+      message = "Adgangskoden er ændret. Andre enheder er logget ud.";
+    } catch (cause) { message = cause instanceof Error ? cause.message : "Adgangskoden kunne ikke ændres."; }
+    finally { changingPassword = false; }
+  }
+
   async function loadAccounts() {
     try { accounts = await api("/accounts"); showAccounts = true; }
     catch (cause) { message = cause instanceof Error ? cause.message : "Kunne ikke hente konti."; }
@@ -738,6 +752,17 @@
           <div class="achievement-list">{#each (showAchievements ? achievements : achievements.slice(0, 6)) as item (item.id)}<div class:unlocked={item.unlocked}><span>{item.unlocked ? "★" : "☆"}</span><div><strong>{item.title}</strong><small>{item.description}</small></div><b>{item.current}/{item.target}</b></div>{/each}</div>
           <button class="secondary" onclick={() => showAchievements = !showAchievements}>{showAchievements ? "Vis færre" : `Vis alle ${achievements.length}`}</button>
         {:else}<p class="muted">Dine achievements vises, når du har forbindelse.</p>{/if}
+      </details>
+      <details class="card secondary-panel"><summary>Min konto</summary>
+        <p>{identity.name} <small class="muted">@{identity.username}</small></p>
+        <p class="muted">Profiltype: {identity.child ? "Barn" : "Voksen"}{identity.role === "admin" ? " · Administrator" : ""}</p>
+        {#if online && !sessionExpired}
+          <form class="account-form" onsubmit={(event) => { event.preventDefault(); void changePassword(); }}>
+            <label>Nuværende adgangskode<input type="password" autocomplete="current-password" bind:value={currentPassword} required /></label>
+            <label>Ny adgangskode<input type="password" autocomplete="new-password" minlength="8" bind:value={nextPassword} required /></label>
+            <button class="secondary" type="submit" disabled={changingPassword}>{changingPassword ? "Ændrer…" : "Skift adgangskode"}</button>
+          </form>
+        {:else}<p class="muted">Adgangskoden kan ændres, når du er logget ind med forbindelse.</p>{/if}
       </details>
       {#if identity.role === "admin"}
         <details class="card secondary-panel"><summary>Spillere og konti</summary>
