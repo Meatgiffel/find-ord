@@ -4,7 +4,7 @@ Beslutningerne styres i [Linear TEA-5](https://linear.app/team-vre/issue/TEA-5/f
 
 ## Bane og ord
 
-En bane har præcis én kategori og en liste med unikke målord fra kategorien. Ordene placeres i én ret, ubrudt linje uden knæk eller passage over griddets kant. Kun ens bogstaver må overlappe. Hvert målord skal kunne findes mindst ét sted.
+En bane har præcis én kategori og en liste med unikke målord fra kategorien. Ordene placeres i én ret, ubrudt linje uden knæk eller passage over griddets kant. Kun ens bogstaver må overlappe. Hvert målord skal kunne findes mindst ét sted. Tomme felter fyldes med A–Z og Æ, Ø, Å efter en fast vægtet fordeling, der groft følger dansk bogstavhyppighed (`LETTERS` i `src/shared/game.ts`); C, Q, W, X og Z bruges ikke som fyld.
 
 Et fund godkendes, når den valgte linje staver et endnu ikke fundet målord i en retning, som niveauet tillader. Det gælder også en ekstra forekomst skabt af fyldbogstaver. En ordform kan kun tælle én gang på samme bane, selv om den findes flere steder, markeres igen eller er et palindrom, der læses ens i begge retninger. En linje uden for griddet, med knæk eller i en ikke tilladt retning afvises.
 
