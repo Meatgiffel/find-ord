@@ -81,6 +81,18 @@ describe("achievement-motor", () => {
     expect(statsForUser(db, "bob").byCategory).toEqual([]);
   });
 
+  it("tæller spilledage som forskellige datoer med fund, uden krav om dage i træk", () => {
+    const puzzle = game("alice", "dyr");
+    const insert = db.prepare("INSERT INTO game_event (id, game_id, user_id, kind, word, created_at) VALUES (?, ?, 'alice', ?, ?, ?)");
+    const days = ["2026-01-02", "2026-01-05", "2026-02-10", "2026-03-01", "2026-04-15", "2026-06-30", "2026-09-09"];
+    days.forEach((day, index) => insert.run(`d-${index}`, puzzle.id, "find", `ORD${index}`, `${day} 12:00:00`));
+    insert.run("same-day", puzzle.id, "find", "ORDX", "2026-09-09 12:30:00");
+    insert.run("hint-day", puzzle.id, "hint", "ORDY", "2026-10-01 12:00:00");
+    const items = achievementsForUser(db, "alice");
+    expect(items.find((item) => item.id === "days-7")?.unlocked).toBe(true);
+    expect(items.find((item) => item.id === "days-30")?.current).toBe(7);
+  });
+
   it("fratager aldrig en tildelt achievement", () => {
     complete("alice", game("alice", "dyr"));
     db.prepare("DELETE FROM game").run();
