@@ -79,7 +79,8 @@ app.use((req, res, next) => {
   const requestId = given && /^[\w.-]{1,64}$/.test(given) ? given : randomUUID();
   res.locals.requestId = requestId;
   res.setHeader("X-Request-Id", requestId);
-  if (!req.path.startsWith("/api/")) return next();
+  // Status checks run every 30 s and are left out of the request log.
+  if (!req.path.startsWith("/api/") || req.path === "/api/health" || req.path === "/api/ready") return next();
   const started = performance.now();
   res.on("finish", () => log(res.statusCode >= 500 ? "error" : "info", "request", {
     requestId, method: req.method, path: req.path, status: res.statusCode, ms: Math.round(performance.now() - started)
