@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { makePuzzle, findWord } from "../shared/game.js";
-import { approveDownloadedGame, clearPendingServerLogout, eraseLocal, local, matchesServerVersions, offlineSignOut, pendingServerLogout, reconcileDownloadedGames, recordMove, removeDownloadedGame, retireDownloadedGame, saveCampaign, saveGame, usableOffline } from "./storage.js";
+import { approveDownloadedGame, clearPendingServerLogout, eraseLocal, local, matchesServerVersions, offlineSignOut, pendingServerLogout, isQuotaError, pruneOfflineGames, reconcileDownloadedGames, recordMove, removeDownloadedGame, retireDownloadedGame, saveCampaign, saveGame, usableOffline } from "./storage.js";
 
 const versions = { rules: 1, validation: 1, words: 1, categories: 1, childPolicy: 2 };
 
@@ -164,6 +164,30 @@ describe("lokal offlinelagring", () => {
     const result = await reconcileDownloadedGames("alice", true, versions, async () => { throw new Error("offline"); });
     expect(result).toEqual({ removed: 0, interrupted: true });
     expect(await local.games.get(puzzle.id)).toBeDefined();
+  });
+
+  it("begrænser offlinebaner ved kun at rydde gennemførte, synkroniserede baner", async () => {
+    const ids: string[] = [];
+    for (let index = 0; index < 5; index++) {
+      const puzzle = makePuzzle(`cap-${index}`, "dyr", "let", 70 + index);
+      await saveGame("alice", { puzzle, found: [], hints: [], completed: index < 3 });
+      await local.games.update(puzzle.id, { updatedAt: index });
+      ids.push(puzzle.id);
+    }
+    const unsynced = (await local.games.get(ids[0]))!;
+    await local.moves.put({ id: "late-sync", kind: "complete", gameId: unsynced.id, owner: "alice", createdAt: 0, sequence: 1 });
+    // ids[0] is completed but unsynced, ids[1] and ids[2] are completed and synced.
+    expect(await pruneOfflineGames("alice", 3)).toBe(3);
+    expect((await local.games.toArray()).map((game) => game.id).sort()).toEqual([ids[0], ids[3], ids[4]].sort());
+    expect(await pruneOfflineGames("alice", 1)).toBe(3);
+    expect(await local.moves.get("late-sync")).toBeDefined();
+  });
+
+  it("genkender fuld lagerplads, også når Dexie pakker fejlen ind", () => {
+    expect(isQuotaError({ name: "QuotaExceededError" })).toBe(true);
+    expect(isQuotaError({ name: "AbortError", inner: { name: "QuotaExceededError" } })).toBe(true);
+    expect(isQuotaError(new Error("anden fejl"))).toBe(false);
+    expect(isQuotaError(null)).toBe(false);
   });
 
   it("rydder voksenpakken, når serveren ændrer kontoen til børneprofil", async () => {

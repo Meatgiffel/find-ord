@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { authClient } from "./auth.js";
-  import { local, recordMove, saveGame, saveCampaign, eraseLocal, offlineSignOut, pendingServerLogout, clearPendingServerLogout, approveDownloadedGame, reconcileDownloadedGames, removeDownloadedGame, retireDownloadedGame, usableOffline, type DownloadedCampaign, type PuzzleVersions, type StoredCampaign, type StoredGame, type StoredIdentity } from "./storage.js";
+  import { local, recordMove, saveGame, saveCampaign, eraseLocal, offlineSignOut, pendingServerLogout, clearPendingServerLogout, approveDownloadedGame, reconcileDownloadedGames, removeDownloadedGame, retireDownloadedGame, usableOffline, pruneOfflineGames, requestPersistentStorage, isQuotaError, MAX_OFFLINE_GAMES, type DownloadedCampaign, type PuzzleVersions, type StoredCampaign, type StoredGame, type StoredIdentity } from "./storage.js";
   import { CATEGORIES, LEVELS, availableLevels, campaignLevels, directionDescription, type CategoryId, type LevelId } from "../shared/words.js";
   import { cellsBetween, findWord, HINT_LIMIT, hintsRemaining, visibleHint, wordAt, type Move, type Point, type Puzzle } from "../shared/game.js";
   import { snapDragEnd } from "./drag.js";
@@ -53,6 +53,8 @@
   let hintSaving = false;
   let markingWord = false;
   let focusCell: Point = { row: 0, col: 0 };
+  let storagePersisted = true;
+  const QUOTA_MESSAGE = "Der er ikke plads på enheden til at gemme mere. Frigør plads, eller synkronisér og gennemfør hentede baner.";
   let shownGameId: string | null = null;
 
   $: available = availableLevels(category);
@@ -261,18 +263,25 @@
     busy = true; message = "";
     try {
       if (!await refreshConnectedAccount() || !identity) return;
+      if (await pruneOfflineGames(identity.id, MAX_OFFLINE_GAMES - 1) >= MAX_OFFLINE_GAMES) {
+        message = `Der er allerede ${MAX_OFFLINE_GAMES} hentede baner på enheden. Gennemfør nogle af dem, før du henter flere.`;
+        return;
+      }
       const game = await api("/games", { method: "POST", body: JSON.stringify({ category: chosenCategory, level: chosenLevel }) });
       await saveGame(identity.id, game);
+      storagePersisted = await requestPersistentStorage();
       await refreshLocal();
       active = games.find((item) => item.id === game.puzzle.id) ?? null;
       message = shellReady ? "Banen er gemt og klar offline." : "Banen er gemt. Vent på, at appen bliver klar til offlinebrug.";
-    } catch (cause) { message = cause instanceof Error ? cause.message : "Banen kunne ikke hentes."; }
+    } catch (cause) { message = isQuotaError(cause) ? QUOTA_MESSAGE : cause instanceof Error ? cause.message : "Banen kunne ikke hentes."; }
     finally { busy = false; }
   }
 
   async function storeCampaign(bundle: DownloadedCampaign) {
     if (!identity) return;
     await saveCampaign(identity.id, bundle);
+    await pruneOfflineGames(identity.id);
+    storagePersisted = await requestPersistentStorage();
     await refreshLocal();
   }
 
@@ -286,7 +295,7 @@
       active = games.filter((game) => game.campaignId === bundle.id && !game.completed)
         .sort((a, b) => (a.campaignPosition ?? 0) - (b.campaignPosition ?? 0))[0] ?? null;
       message = active ? "Kampagnebanerne er hentet og klar offline." : "Der er ingen bane klar endnu. Prøv igen med forbindelse.";
-    } catch (cause) { message = cause instanceof Error ? cause.message : "Kampagnen kunne ikke hentes."; }
+    } catch (cause) { message = isQuotaError(cause) ? QUOTA_MESSAGE : cause instanceof Error ? cause.message : "Kampagnen kunne ikke hentes."; }
     finally { busy = false; }
   }
 
@@ -364,7 +373,7 @@
     } catch (cause) {
       const reason = cause instanceof Error ? cause.message : "";
       message = ["Hintet er ugyldigt.", "Ordet har allerede fået et hint.", "Alle hints på denne bane er brugt.", "Banen er allerede afsluttet."].includes(reason)
-        ? reason : "Kunne ikke gemme trækket på enheden. Kontrollér ledig lagerplads.";
+        ? reason : isQuotaError(cause) ? QUOTA_MESSAGE : "Kunne ikke gemme trækket på enheden. Kontrollér ledig lagerplads.";
       return false;
     }
   }
@@ -698,6 +707,7 @@
         {#if games.some((game) => !game.campaignId)}
           <div class="saved-list">{#each games.filter((game) => !game.campaignId) as game (game.id)}<button onclick={() => chooseGame(game)}><span><strong>{CATEGORIES[game.puzzle.category].name}</strong><small>{LEVELS[game.puzzle.level].name} · {game.found.length}/{game.puzzle.words.length} ord</small></span><span class="saved-status">{game.completed ? "Gennemført" : shellReady ? "Klar offline" : "Afventer offlineapp"} ↗</span></button>{/each}</div>
         {:else}<p class="muted">Dine hentede baner vises her.</p>{/if}
+        {#if !storagePersisted}<p class="muted">Browseren kan slette hentede baner ved pladsmangel. Synkronisér, før du rydder browserdata.</p>{/if}
         {#if online && pending}<button class="secondary" onclick={syncAll}>Synkronisér nu</button>{/if}
       </details>
       <details class="card secondary-panel"><summary>Achievements <span>{achievements.filter((item) => item.unlocked).length}/{achievements.length}</span></summary>

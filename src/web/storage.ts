@@ -31,6 +31,32 @@ class LocalStore extends Dexie {
 
 export const local = new LocalStore();
 
+// Keep the offline store small. Only completed games without unsynced moves are pruned.
+export const MAX_OFFLINE_GAMES = 30;
+
+export async function pruneOfflineGames(owner: string, max = MAX_OFFLINE_GAMES): Promise<number> {
+  return local.transaction("rw", local.games, local.moves, async () => {
+    const saved = await local.games.where("owner").equals(owner).toArray();
+    if (saved.length <= max) return saved.length;
+    const pending = new Set((await local.moves.where("owner").equals(owner).toArray()).map((move) => move.gameId));
+    const removable = saved.filter((game) => game.completed && !pending.has(game.id)).sort((a, b) => a.updatedAt - b.updatedAt);
+    const excess = removable.slice(0, saved.length - max).map((game) => game.id);
+    await local.games.bulkDelete(excess);
+    return saved.length - excess.length;
+  });
+}
+
+export async function requestPersistentStorage(): Promise<boolean> {
+  if (!navigator.storage?.persist) return false;
+  try { return await navigator.storage.persisted() || await navigator.storage.persist(); }
+  catch { return false; }
+}
+
+export function isQuotaError(cause: unknown): boolean {
+  const error = cause as { name?: string; inner?: { name?: string } } | null;
+  return error?.name === "QuotaExceededError" || error?.inner?.name === "QuotaExceededError";
+}
+
 export async function saveGame(owner: string, game: Omit<StoredGame, "id" | "owner" | "updatedAt" | "approvedAtDownload">): Promise<void> {
   if (validatePuzzle(game.puzzle)) throw new Error("Den hentede bane bestod ikke den lokale validering.");
   await local.games.put({ ...game, id: game.puzzle.id, owner, approvedAtDownload: true, updatedAt: Date.now() });
