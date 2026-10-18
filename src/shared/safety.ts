@@ -29,6 +29,8 @@ const EXCEPTIONS = new Map(BLOCKED_SEQUENCES.map((sequence) => [sequence, approv
   return offsets;
 })]));
 const MAX_SEQUENCE_LENGTH = Math.max(...BLOCKED_SEQUENCES.map((word) => word.length));
+const SEQUENCES = new Set<string>(BLOCKED_SEQUENCES);
+const LENGTHS = [...new Set(BLOCKED_SEQUENCES.map((word) => word.length))];
 
 function spells(grid: string[][], row: number, col: number, dr: number, dc: number, word: string): boolean {
   const size = grid.length;
@@ -49,8 +51,10 @@ export function blockedFragment(grid: string[][]): string | null {
         if (r < 0 || c < 0 || r >= size || c >= size) break;
         if (!grid[r][c]) break;
         text += grid[r][c];
-        for (const sequence of BLOCKED_SEQUENCES) {
-          if (!text.endsWith(sequence)) continue;
+        for (const length of LENGTHS) {
+          if (length > text.length) continue;
+          const sequence = text.slice(-length);
+          if (!SEQUENCES.has(sequence)) continue;
           const startRow = r - dr * (sequence.length - 1), startCol = c - dc * (sequence.length - 1);
           const excused = EXCEPTIONS.get(sequence)!.some(({ word, offset }) =>
             spells(grid, startRow - dr * offset, startCol - dc * offset, dr, dc, word));

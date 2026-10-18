@@ -7,7 +7,8 @@ describe("banegenerator", () => {
   it("danner løsbare, tematiske og reproducerbare baner på annoncerede niveauer", () => {
     for (const category of Object.keys(CATEGORIES) as CategoryId[]) {
       for (const level of availableLevels(category)) {
-        for (let seed = 1; seed <= 30; seed++) {
+        // npm run test:generator covers 1,000 seeds per combination; this is the quick check.
+        for (let seed = 1; seed <= 8; seed++) {
           const puzzle = makePuzzle("test", category, level, seed);
           expect(puzzle).toEqual(makePuzzle("test", category, level, seed));
           expect(puzzle.grid).toHaveLength(LEVELS[level].size);
