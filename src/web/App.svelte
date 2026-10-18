@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { authClient } from "./auth.js";
-  import { local, recordMove, saveGame, saveCampaign, eraseLocal, offlineSignOut, pendingServerLogout, clearPendingServerLogout, approveDownloadedGame, reconcileDownloadedGames, removeDownloadedGame, usableOffline, type DownloadedCampaign, type PuzzleVersions, type StoredCampaign, type StoredGame, type StoredIdentity } from "./storage.js";
+  import { local, recordMove, saveGame, saveCampaign, eraseLocal, offlineSignOut, pendingServerLogout, clearPendingServerLogout, approveDownloadedGame, reconcileDownloadedGames, removeDownloadedGame, retireDownloadedGame, usableOffline, type DownloadedCampaign, type PuzzleVersions, type StoredCampaign, type StoredGame, type StoredIdentity } from "./storage.js";
   import { CATEGORIES, LEVELS, availableLevels, campaignLevels, directionDescription, type CategoryId, type LevelId } from "../shared/words.js";
   import { cellsBetween, findWord, HINT_LIMIT, hintsRemaining, visibleHint, wordAt, type Move, type Point, type Puzzle } from "../shared/game.js";
   import { snapDragEnd } from "./drag.js";
@@ -341,7 +341,8 @@
       }
       catch (cause) {
         if (cause instanceof Error && "status" in cause && (cause.status === 410 || cause.status === 404)) {
-          await removeDownloadedGame(game.id);
+          if (cause.status === 410) await retireDownloadedGame(game.id);
+          else await removeDownloadedGame(game.id);
           await refreshLocal();
           message = "Banen er udgået og er fjernet fra denne enhed.";
           return;
@@ -600,7 +601,9 @@
           await local.transaction("rw", local.moves, local.games, async () => {
             await local.moves.bulkDelete(moves.map((move) => move.id));
             if (await local.moves.where("gameId").equals(id).count() === 0) {
-              await local.games.update(id, { found: result.found, hints: result.hints, completed: result.completed, revision: result.revision });
+              // A retired game was only kept to upload its moves.
+              if ((await local.games.get(id))?.retired) await local.games.delete(id);
+              else await local.games.update(id, { found: result.found, hints: result.hints, completed: result.completed, revision: result.revision });
             }
           });
         }

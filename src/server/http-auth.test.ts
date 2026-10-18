@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { once } from "node:events";
 import { describe, expect, it } from "vitest";
+import Database from "better-sqlite3";
+import { findWord, type Puzzle } from "../shared/game.js";
 
 async function freePort(): Promise<number> {
   const server = createServer();
@@ -88,6 +90,24 @@ describe("HTTP-adgangskontrol", () => {
       expect((await fetch(`${baseURL}/api/games/${created.puzzle.id}`, { headers: { Cookie: alice } })).status).toBe(200);
       expect((await fetch(`${baseURL}/api/games/${created.puzzle.id}`, { headers: { Cookie: bob } })).status).toBe(404);
       expect((await fetch(`${baseURL}/api/games/${created.puzzle.id}/sync`, {
+        method: "POST", headers: { Origin: baseURL, Cookie: bob, "Content-Type": "application/json" },
+        body: JSON.stringify({ events: [] })
+      })).status).toBe(404);
+      // A game retired by a version change is not delivered again, but its owner's
+      // offline moves are still accepted so progress is not lost.
+      const stored = new Database(join(directory, "test.sqlite"));
+      const puzzle = JSON.parse((stored.prepare("SELECT puzzle FROM game WHERE id = ?").get(created.puzzle.id) as { puzzle: string }).puzzle) as Puzzle;
+      stored.prepare("UPDATE game SET puzzle = ? WHERE id = ?").run(JSON.stringify({ ...puzzle, wordListVersion: 0 }), puzzle.id);
+      stored.close();
+      expect((await fetch(`${baseURL}/api/games/${puzzle.id}`, { headers: { Cookie: alice } })).status).toBe(410);
+      const word = puzzle.words[0];
+      const retiredSync = await fetch(`${baseURL}/api/games/${puzzle.id}/sync`, {
+        method: "POST", headers: { Origin: baseURL, Cookie: alice, "Content-Type": "application/json" },
+        body: JSON.stringify({ events: [{ id: "00000000-0000-4000-8000-000000000001", kind: "find", word, ...findWord(puzzle, word) }] })
+      });
+      expect(retiredSync.status).toBe(200);
+      expect((await retiredSync.json() as { found: string[] }).found).toEqual([word]);
+      expect((await fetch(`${baseURL}/api/games/${puzzle.id}/sync`, {
         method: "POST", headers: { Origin: baseURL, Cookie: bob, "Content-Type": "application/json" },
         body: JSON.stringify({ events: [] })
       })).status).toBe(404);

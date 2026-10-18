@@ -4,7 +4,7 @@ import type { Achievement } from "../shared/achievements.js";
 import { revalidateLegacyPuzzle, validatePuzzle } from "../shared/validation.js";
 import type { LevelId } from "../shared/words.js";
 
-export type StoredGame = { id: string; owner: string; puzzle: Puzzle; found: string[]; hints: string[]; completed: boolean; revision?: number; updatedAt: number; approvedAtDownload?: boolean; campaignId?: string; campaignPosition?: number };
+export type StoredGame = { id: string; owner: string; puzzle: Puzzle; found: string[]; hints: string[]; completed: boolean; revision?: number; updatedAt: number; approvedAtDownload?: boolean; retired?: boolean; campaignId?: string; campaignPosition?: number };
 export type StoredCampaign = { id: string; owner: string; level: LevelId };
 export type DownloadedCampaign = { id: string; level: LevelId; games: Array<Omit<StoredGame, "id" | "owner" | "updatedAt" | "approvedAtDownload">> };
 export type StoredMove = Move & { id: string; gameId: string; owner: string; createdAt: number; sequence: number };
@@ -51,7 +51,7 @@ export async function saveCampaign(owner: string, campaign: DownloadedCampaign):
 }
 
 export function usableOffline(game: StoredGame, child: boolean): boolean {
-  if (game.puzzle.child !== child) return false;
+  if (game.retired || game.puzzle.child !== child) return false;
   if (!child) return true;
   const puzzle = game.puzzle;
   if (game.approvedAtDownload && puzzle.version === 1 &&
@@ -81,6 +81,19 @@ export async function removeDownloadedGame(id: string): Promise<void> {
   });
 }
 
+// An invalidated game keeps its unsynced moves: it is hidden from play until they are
+// uploaded, and only then deleted. Returns true when the game was deleted right away.
+export async function retireDownloadedGame(id: string): Promise<boolean> {
+  return local.transaction("rw", local.games, local.moves, async () => {
+    if (await local.moves.where("gameId").equals(id).count()) {
+      await local.games.update(id, { retired: true });
+      return false;
+    }
+    await local.games.delete(id);
+    return true;
+  });
+}
+
 export async function reconcileDownloadedGames(
   owner: string, child: boolean, versions: PuzzleVersions,
   loadGame: (id: string) => Promise<{ puzzle: Puzzle }>
@@ -88,9 +101,13 @@ export async function reconcileDownloadedGames(
   let removed = 0;
   const saved = await local.games.where("owner").equals(owner).toArray();
   for (const game of saved) {
+    if (game.retired) {
+      await retireDownloadedGame(game.id);
+      continue;
+    }
     if (game.puzzle.child !== child ||
       (game.approvedAtDownload && !matchesServerVersions(game.puzzle, versions))) {
-      await removeDownloadedGame(game.id);
+      await retireDownloadedGame(game.id);
       removed++;
       continue;
     }
@@ -100,7 +117,8 @@ export async function reconcileDownloadedGames(
         await approveDownloadedGame(game.id, current.puzzle);
       } catch (cause) {
         if (cause instanceof Error && "status" in cause && (cause.status === 410 || cause.status === 404)) {
-          await removeDownloadedGame(game.id);
+          if (cause.status === 410) await retireDownloadedGame(game.id);
+          else await removeDownloadedGame(game.id);
           removed++;
         } else return { removed, interrupted: true };
       }

@@ -144,8 +144,9 @@ app.post("/api/games/:id/sync", async (req, res) => {
   if (!parsed.success) return error(res, 400, "Ugyldige spilhændelser.");
   const row = loadGameForUser(db, req.params.id, current.id);
   if (!row) return error(res, 404, "Banen blev ikke fundet.");
-  const puzzle = JSON.parse(row.puzzle) as Puzzle;
-  if (puzzle.child !== childFor(current.id) || validatePuzzle(puzzle)) return error(res, 410, "Banen er udgået efter en ændring i ordlisten, kategorien eller sikkerhedskontrollen.");
+  // A game retired by a version or policy change still accepts its owner's moves, so
+  // offline progress is not lost. Events are checked against the stored grid and
+  // sync returns no puzzle content.
   try {
     res.json(applyGameEvents(db, row, current.id, parsed.data.events as Move[]));
   } catch (cause) {

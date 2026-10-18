@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { makePuzzle, findWord } from "../shared/game.js";
-import { approveDownloadedGame, clearPendingServerLogout, eraseLocal, local, matchesServerVersions, offlineSignOut, pendingServerLogout, reconcileDownloadedGames, recordMove, removeDownloadedGame, saveCampaign, saveGame, usableOffline } from "./storage.js";
+import { approveDownloadedGame, clearPendingServerLogout, eraseLocal, local, matchesServerVersions, offlineSignOut, pendingServerLogout, reconcileDownloadedGames, recordMove, removeDownloadedGame, retireDownloadedGame, saveCampaign, saveGame, usableOffline } from "./storage.js";
 
 const versions = { rules: 1, validation: 1, words: 1, categories: 1, childPolicy: 2 };
 
@@ -132,9 +132,29 @@ describe("lokal offlinelagring", () => {
     });
     expect(result).toEqual({ removed: 1, interrupted: false });
     expect(loaded).toEqual([legacy.id]);
-    expect(await local.games.get(stale.id)).toBeUndefined();
-    expect(await local.moves.get("stale-move")).toBeUndefined();
+    // The stale game is hidden but keeps its unsynced move for upload.
+    const retired = (await local.games.get(stale.id))!;
+    expect(retired.retired).toBe(true);
+    expect(usableOffline(retired, true)).toBe(false);
+    expect(await local.moves.get("stale-move")).toBeDefined();
     expect((await local.games.get(legacy.id))?.approvedAtDownload).toBe(true);
+  });
+
+  it("sletter en udgået bane først, når dens træk er synkroniseret", async () => {
+    const puzzle = makePuzzle("quarantine", "dyr", "let", 59);
+    const clean = makePuzzle("clean-retire", "dyr", "let", 61);
+    await saveGame("alice", { puzzle, found: [], hints: [], completed: false });
+    await saveGame("alice", { puzzle: clean, found: [], hints: [], completed: false });
+    await recordMove((await local.games.get(puzzle.id))!, { id: "unsynced", kind: "hint", word: puzzle.words[0] }, { found: [], hints: [puzzle.words[0]], completed: false });
+    expect(await retireDownloadedGame(puzzle.id)).toBe(false);
+    expect(await retireDownloadedGame(clean.id)).toBe(true);
+    expect(await local.games.get(clean.id)).toBeUndefined();
+    const noFetch = async () => { throw new Error("Bør ikke hentes"); };
+    expect(await reconcileDownloadedGames("alice", false, versions, noFetch)).toEqual({ removed: 0, interrupted: false });
+    expect(await local.games.get(puzzle.id)).toBeDefined();
+    await local.moves.delete("unsynced");
+    await reconcileDownloadedGames("alice", false, versions, noFetch);
+    expect(await local.games.get(puzzle.id)).toBeUndefined();
   });
 
   it("bevarer downloads, hvis genvalidering afbrydes af netværksfejl", async () => {
