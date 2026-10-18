@@ -5,7 +5,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { z } from "zod";
-import { auth, authForHost, lanAuth, trustedOrigins } from "./auth.js";
+import { auth, authForHost, CLIENT_IP_HEADER, lanAuth, trustedOrigins } from "./auth.js";
 import { db, migrateGameData } from "./database.js";
 import { importBundledCor } from "./lexicon.js";
 import { achievementsForUser, statsForUser } from "./achievements.js";
@@ -41,6 +41,14 @@ const CREATION_LIMITED = "Du har hentet mange nye baner på kort tid. Vent lidt,
 type SessionUser = { id: string; name: string; role?: string | null; username?: string | null };
 const app = express();
 app.disable("x-powered-by");
+// TRUST_PROXY names the reverse proxy allowed to report the client address (Express
+// "trust proxy" syntax, e.g. "loopback" or "192.168.50.0/24"). Without it the socket
+// address is used. Either way the value replaces any header a client sends itself.
+if (process.env.TRUST_PROXY) app.set("trust proxy", process.env.TRUST_PROXY);
+app.use((req, _res, next) => {
+  req.headers[CLIENT_IP_HEADER] = req.ip ?? req.socket.remoteAddress ?? "unknown";
+  next();
+});
 
 function error(res: Response, status: number, message: string): void { res.status(status).json({ error: message }); }
 function originAllowed(req: Request): boolean {

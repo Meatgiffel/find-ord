@@ -3,6 +3,7 @@ import { admin, username } from "better-auth/plugins";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { db, authSecret } from "./database.js";
 
+export const CLIENT_IP_HEADER = "x-find-ord-client-ip";
 export const baseURL = process.env.BASE_URL || "http://localhost:3000";
 const lanHttpUrl = process.env.LAN_HTTP_URL?.trim();
 if (lanHttpUrl && new URL(lanHttpUrl).protocol !== "http:") throw new Error("LAN_HTTP_URL skal være en HTTP-adresse.");
@@ -52,7 +53,9 @@ function createAuth(url: string) { return betterAuth({
   emailAndPassword: { enabled: true, disableSignUp: false },
   plugins: [username(), admin()],
   hooks: { before: guardAccountChanges, after: revokeAfterPasswordReset },
-  advanced: { useSecureCookies: url.startsWith("https:"), database: { validateSchema: false } }
+  // The client address is set by the app (see index.ts), never taken from the request,
+  // so rate limits apply per client instead of one shared bucket for everyone.
+  advanced: { useSecureCookies: url.startsWith("https:"), database: { validateSchema: false }, ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] } }
 }); }
 
 export const auth = createAuth(baseURL);

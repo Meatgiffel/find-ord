@@ -12,6 +12,7 @@ services:
       TZ: Europe/Copenhagen
       LOG_LEVEL: "${LOG_LEVEL:-info}"
       GAME_CREATION_LIMIT: "${GAME_CREATION_LIMIT:-60}"
+      TRUST_PROXY: "${TRUST_PROXY:-}"
     stop_grace_period: 15s
     volumes:
       - find-ord-data:/app/data
