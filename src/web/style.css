@@ -908,3 +908,12 @@ input:focus-visible {
 .account-actions { display: flex; flex-wrap: wrap; gap: 4px 10px; }
 .account-actions .danger { color: #9b3d33; }
 .account-actions .text-button { min-height: 40px; }
+
+.table-scroll { overflow-x: auto; margin: 10px 0; }
+.coverage-table, .word-table { border-collapse: collapse; width: 100%; font-size: .8rem; }
+.coverage-table caption { text-align: left; font-weight: 700; padding-bottom: 6px; }
+.coverage-table th, .coverage-table td, .word-table th, .word-table td { border-bottom: 1px solid #dfe7e1; padding: 5px 6px; text-align: left; white-space: nowrap; }
+.coverage-table td.closed { color: #8a3b2e; }
+.coverage-table small, .word-table small { display: block; color: #71877a; }
+.word-filters { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 12px; }
+.word-filters label { display: grid; gap: 4px; font-size: .8rem; font-weight: 700; }

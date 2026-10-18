@@ -125,6 +125,11 @@ describe("HTTP-adgangskontrol", () => {
 
       // Account rules on Better Auth's admin routes.
       const root = await login("root");
+      expect((await fetch(`${baseURL}/api/admin/words`, { headers: { Cookie: alice } })).status).toBe(403);
+      const wordAdmin = await (await fetch(`${baseURL}/api/admin/words`, { headers: { Cookie: root } })).json() as { words: Array<{ sources: string[] }>; coverage: unknown[] };
+      expect(wordAdmin.coverage).toHaveLength(9);
+      expect(wordAdmin.words.length).toBeGreaterThan(800);
+      expect(wordAdmin.words.every((item) => item.sources.length > 0)).toBe(true);
       const adminCall = (path: string, body: object) => fetch(`${baseURL}/api/auth/admin/${path}`, {
         method: "POST", headers: { Origin: baseURL, Cookie: root, "Content-Type": "application/json" }, body: JSON.stringify(body)
       });

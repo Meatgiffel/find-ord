@@ -16,10 +16,10 @@ import { challengeState } from "./challenges.js";
 import { campaignNeeds, campaignsForUser, refillCampaign, startCampaign } from "./campaigns.js";
 import { PuzzleSupply, SupplyBusyError, workerGenerator } from "./supply.js";
 import { applyGameEvents, loadGameForUser, type GameRow } from "./game-sync.js";
-import { AVATARS, CATEGORIES, CATEGORY_TAG_VERSION, WORD_LIST_VERSION, availableLevels, campaignLevels, type CategoryId, type LevelId } from "../shared/words.js";
+import { AVATARS, CATEGORIES, CATEGORY_TAG_VERSION, LEVELS, WORD_LIST_VERSION, adultOnlyReason, availableLevels, campaignLevels, categoryWords, readingLevel, type CategoryId, type LevelId } from "../shared/words.js";
 import type { Move, Puzzle } from "../shared/game.js";
 import { VALIDATION_VERSION, validatePuzzle } from "../shared/validation.js";
-import { CHILD_POLICY_VERSION } from "../shared/safety.js";
+import { BLOCKED_SEQUENCES, CHILD_POLICY_VERSION } from "../shared/safety.js";
 
 // A failed start (e.g. a full disk during the first word import) is logged and stops the
 // process; Docker restarts it, and the import resumes cleanly once there is room.
@@ -327,6 +327,35 @@ app.post("/api/setup", async (req, res) => {
 });
 
 const accountSchema = z.object({ username: z.string().regex(/^[a-zA-Z0-9_.-]{3,30}$/), name: z.string().trim().min(1).max(80), password: z.string().min(8), child: z.boolean() });
+// Read-only overview of the editorial word lists for administrators. Changes go through
+// the repository (docs/ordindhold.md), so git holds the history.
+app.get("/api/admin/words", async (req, res) => {
+  const current = await user(req, res); if (!current) return;
+  if (current.role !== "admin") return error(res, 403, "Kun administrator kan se ordlisterne.");
+  const categories = Object.keys(CATEGORIES) as CategoryId[];
+  // One lookup for all words; the word index is only used without ORDER BY cor_id.
+  const sources = new Map<string, string[]>();
+  const listed = [...new Set(categories.flatMap((category) => categoryWords(category)))];
+  for (const row of db.prepare("SELECT word, cor_id FROM lexicon_source WHERE source_version = ? AND word IN (SELECT value FROM json_each(?))")
+    .all(COR_VERSION, JSON.stringify(listed)) as Array<{ word: string; cor_id: string }>) {
+    sources.set(row.word, [...(sources.get(row.word) ?? []), row.cor_id].sort());
+  }
+  const levels = Object.keys(LEVELS) as LevelId[];
+  const words = categories.flatMap((category) => categoryWords(category).map((word) => ({
+    word, category, child: !adultOnlyReason(category, word), reason: adultOnlyReason(category, word), readingLevel: readingLevel(word),
+    sources: sources.get(word) ?? []
+  })));
+  const coverage = categories.map((category) => ({
+    category, name: CATEGORIES[category].name,
+    levels: Object.fromEntries(levels.map((level) => {
+      const fits = (child: boolean) => categoryWords(category, child).filter((word) => word.length >= LEVELS[level].min && word.length <= LEVELS[level].max).length;
+      return [level, { adult: fits(false), child: fits(true), needed: LEVELS[level].words,
+        adultOpen: availableLevels(category).includes(level), childOpen: availableLevels(category, true).includes(level) }];
+    }))
+  }));
+  res.json({ versions, blockedSequences: BLOCKED_SEQUENCES.length, coverage, words });
+});
+
 app.get("/api/accounts", async (req, res) => {
   const current = await user(req, res); if (!current) return;
   if (current.role !== "admin") return error(res, 403, "Kun administrator kan se konti.");

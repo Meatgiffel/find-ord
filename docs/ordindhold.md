@@ -99,6 +99,8 @@ Undtagelse for falske positiver: Ligger en sekvens inde i et børnegodkendt ord 
 
 Gemte baner kan fortsat spilles efter en ny ordlisteversion, så længe alle deres målord stadig står på den aktive liste. En ny børnepolitik får derimod tidligere børnebaner til at udløbe.
 
+Administratorer kan gennemse listerne i appen under "Ordlister". Her kan de søge, filtrere på kategori og børnestatus og se COR-kilde, læseniveau, dækningsmatrix og aktive versioner. Siden er skrivebeskyttet, så ændringer går altid gennem proceduren ovenfor. Git er historikken, og rollback sker ved at deploye en tidligere udgave. Ved start fjerner serveren cachede baner fra ældre versioner. Gemte baner valideres mod den aktive liste ved næste kontakt.
+
 ### Kendte begrænsninger
 
 - Kontrollen håndhæver den valgte politik. Den kan ikke opdage enhver stødende tolkning, fx et sammenfald på tværs af sprog eller et nyt slangudtryk.

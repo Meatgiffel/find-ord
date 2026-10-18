@@ -58,7 +58,8 @@ export async function importCor(db: Database.Database, source: string, version: 
     form TEXT NOT NULL,
     pos TEXT NOT NULL,
     PRIMARY KEY (source_version, cor_id, form)
-  )`);
+  );
+  CREATE INDEX IF NOT EXISTS lexicon_source_word ON lexicon_source (source_version, word)`);
   const completed = db.prepare("SELECT report FROM lexicon_import WHERE source_version = ?").get(version) as { report: string } | undefined;
   if (completed) return { ...JSON.parse(completed.report) as ImportReport, alreadyPresent: true };
   if (!existsSync(source)) throw new Error(`Mangler ordgrundlag: ${source}`);

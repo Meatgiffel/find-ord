@@ -59,6 +59,27 @@
   let nextPassword = "";
   let changingPassword = false;
   let showAccounts = false;
+  type WordAdmin = {
+    versions: { words: number; categories: number; childPolicy: number; validation: number; cor: string };
+    blockedSequences: number;
+    coverage: Array<{ category: CategoryId; name: string; levels: Record<string, { adult: number; child: number; needed: number; adultOpen: boolean; childOpen: boolean }> }>;
+    words: Array<{ word: string; category: CategoryId; child: boolean; reason: string | null; readingLevel: number; sources: string[] }>;
+  };
+  let wordAdmin: WordAdmin | null = null;
+  let wordAdminError = "";
+  let wordQuery = "";
+  let wordCategory = "";
+  let wordChild = "";
+  $: shownWords = (wordAdmin?.words ?? []).filter((item) =>
+    (!wordQuery || item.word.includes(wordQuery.trim().toLocaleUpperCase("da-DK"))) &&
+    (!wordCategory || item.category === wordCategory) &&
+    (!wordChild || item.child === (wordChild === "ja")));
+
+  async function loadWordAdmin() {
+    wordAdminError = "";
+    try { wordAdmin = await api("/admin/words") as WordAdmin; }
+    catch (cause) { wordAdminError = cause instanceof Error ? cause.message : "Ordlisterne kunne ikke hentes."; }
+  }
   let achievements: Achievement[] = [];
   // Confirmed by the server; hints still in the outbox are subtracted locally.
   let challengeInfo: ChallengeState | null = null;
@@ -295,7 +316,7 @@
     }
     if (serverDone) await eraseLocal();
     else await offlineSignOut();
-    identity = null; serverVersions = null; sessionExpired = false; active = null; games = []; campaigns = []; pending = 0; pendingGameIds = []; showAccounts = false; achievements = []; challengeInfo = null; pendingHints = 0;
+    identity = null; serverVersions = null; sessionExpired = false; active = null; games = []; campaigns = []; pending = 0; pendingGameIds = []; showAccounts = false; wordAdmin = null; achievements = []; challengeInfo = null; pendingHints = 0;
     message = serverDone ? "Du er logget ud." : "Du er logget ud på denne enhed. Serverudlogning sker ved næste forbindelse.";
   }
 
@@ -978,6 +999,22 @@
               <label>Navn<input bind:value={newName} required /></label><label>Brugernavn<input bind:value={newUser} pattern={"[A-Za-z0-9_.-]{3,30}"} required /></label><label>Adgangskode<input type="password" minlength="8" bind:value={newPassword} required /></label><label class="checkbox"><input type="checkbox" bind:checked={newChild} /> Børneprofil (under gennemgang)</label><button class="secondary" type="submit">Opret spiller</button>
             </form>
           {/if}
+        </details>
+        <details class="card secondary-panel" ontoggle={(event) => { if ((event.currentTarget as HTMLDetailsElement).open && !wordAdmin) void loadWordAdmin(); }}><summary>Ordlister</summary>
+          {#if wordAdmin}
+            <p class="muted">Ordliste v{wordAdmin.versions.words} · kategorier v{wordAdmin.versions.categories} · børnepolitik v{wordAdmin.versions.childPolicy} · validering v{wordAdmin.versions.validation} · COR {wordAdmin.versions.cor} · {wordAdmin.blockedSequences} blokerede sekvenser. Listerne ændres i koden efter den redaktionelle procedure i <code>docs/ordindhold.md</code>; git er historikken, og rollback sker med en tidligere udgave.</p>
+            <div class="table-scroll"><table class="coverage-table"><caption>Dækning: ord med niveauets længde, voksen / barn</caption>
+              <thead><tr><th scope="col">Kategori</th>{#each Object.entries(LEVELS) as [id, item] (id)}<th scope="col">{item.name}<small> ({item.words})</small></th>{/each}</tr></thead>
+              <tbody>{#each wordAdmin.coverage as row (row.category)}<tr><th scope="row">{row.name}</th>{#each Object.keys(LEVELS) as id (id)}{@const cell = row.levels[id]}<td class:closed={!cell.adultOpen || !cell.childOpen}>{cell.adult} / {cell.child}{#if !cell.childOpen}<small> lukket for børn</small>{/if}{#if !cell.adultOpen}<small> lukket</small>{/if}</td>{/each}</tr>{/each}</tbody></table></div>
+            <div class="word-filters">
+              <label>Søg<input type="search" bind:value={wordQuery} autocomplete="off" /></label>
+              <label>Kategori<select bind:value={wordCategory}><option value="">Alle</option>{#each Object.entries(CATEGORIES) as [id, item] (id)}<option value={id}>{item.name}</option>{/each}</select></label>
+              <label>Børn<select bind:value={wordChild}><option value="">Alle</option><option value="ja">Godkendt</option><option value="nej">Kun voksne</option></select></label>
+            </div>
+            <p class="muted" aria-live="polite">{shownWords.length} af {wordAdmin.words.length} tilknytninger{shownWords.length > 200 ? " (de første 200 vises)" : ""}.</p>
+            <div class="table-scroll"><table class="word-table"><thead><tr><th scope="col">Ord</th><th scope="col">Kategori</th><th scope="col">Børn</th><th scope="col">Læseniveau</th><th scope="col">COR-kilde</th></tr></thead>
+              <tbody>{#each shownWords.slice(0, 200) as item (`${item.category}/${item.word}`)}<tr><td>{item.word}</td><td>{CATEGORIES[item.category].name}</td><td>{item.child ? "Godkendt" : `Nej: ${item.reason}`}</td><td>{item.readingLevel}</td><td><small>{item.sources.join(", ") || "mangler"}</small></td></tr>{/each}</tbody></table></div>
+          {:else}<p class="muted">{wordAdminError || "Henter ordlisterne…"}</p>{/if}
         </details>
       {/if}
     {:else}
