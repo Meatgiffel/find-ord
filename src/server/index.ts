@@ -10,7 +10,7 @@ import { db, migrateGameData } from "./database.js";
 import { importBundledCor } from "./lexicon.js";
 import { achievementsForUser } from "./achievements.js";
 import { campaignsForUser, refillCampaign, startCampaign } from "./campaigns.js";
-import { applyGameEvents, GameSyncError, loadGameForUser, type GameRow } from "./game-sync.js";
+import { applyGameEvents, loadGameForUser, type GameRow } from "./game-sync.js";
 import { CATEGORIES, CATEGORY_TAG_VERSION, WORD_LIST_VERSION, availableLevels, campaignLevels, type CategoryId, type LevelId } from "../shared/words.js";
 import { makePuzzle, type Move, type Puzzle } from "../shared/game.js";
 import { VALIDATION_VERSION, validatePuzzle } from "../shared/validation.js";
@@ -150,12 +150,7 @@ app.post("/api/games/:id/sync", async (req, res) => {
   try {
     res.json(applyGameEvents(db, row, current.id, parsed.data.events as Move[]));
   } catch (cause) {
-    const message = cause instanceof Error ? cause.message : "Synkronisering mislykkedes.";
-    if (cause instanceof GameSyncError && cause.rejectedHintId) {
-      const currentRow = loadGameForUser(db, row.id, current.id)!;
-      return res.status(409).json({ error: message, rejectedHintId: cause.rejectedHintId, serverGame: serializedGame(currentRow) });
-    }
-    return error(res, 409, message);
+    return error(res, 409, cause instanceof Error ? cause.message : "Synkronisering mislykkedes.");
   }
 });
 

@@ -580,41 +580,38 @@
         for (const id of ids) {
           const moves = (await local.moves.where("gameId").equals(id).toArray()).sort((a, b) => a.sequence - b.sequence).slice(0, 500);
           if (!moves.length) continue;
-          let result;
+          let result: { found: string[]; hints: string[]; completed: boolean; revision: number; acknowledged: string[]; rejected: Array<{ id: string; error: string }> };
           try { result = await api(`/games/${id}/sync`, { method: "POST", body: JSON.stringify({ events: moves }) }); }
           catch (cause) {
-            if (cause instanceof Error && "status" in cause && (cause.status === 410 || cause.status === 404)) {
+            if (cause instanceof Error && "status" in cause && cause.status === 404) {
               await removeDownloadedGame(id);
-              message = "En udgået bane er fjernet fra denne enhed.";
+              message = "En bane findes ikke længere på serveren og er fjernet fra denne enhed.";
               continue;
-            }
-            if (cause instanceof Error && "details" in cause) {
-              const details = cause.details as { rejectedHintId?: string; serverGame?: { hints: string[]; revision: number } };
-              if (details.rejectedHintId && details.serverGame) {
-                const { rejectedHintId, serverGame } = details;
-                await local.transaction("rw", local.moves, local.games, async () => {
-                  await local.moves.delete(rejectedHintId);
-                  const remaining = await local.moves.where("gameId").equals(id).toArray();
-                  const saved = await local.games.get(id);
-                  if (saved) await local.games.update(id, {
-                    hints: [...new Set([...serverGame.hints, ...remaining.filter((move) => move.kind === "hint").map((move) => move.word!).filter(Boolean)])],
-                    revision: serverGame.revision
-                  });
-                });
-                message = "Et offlinehint kunne ikke godkendes, fordi banens hintgrænse blev nået på en anden enhed. Andre træk synkroniseres fortsat.";
-                continue;
-              }
             }
             throw cause;
           }
+          // Only events the server acknowledged or rejected leave the outbox. The local
+          // state is the server state plus moves that are still waiting.
           await local.transaction("rw", local.moves, local.games, async () => {
-            await local.moves.bulkDelete(moves.map((move) => move.id));
-            if (await local.moves.where("gameId").equals(id).count() === 0) {
-              // A retired game was only kept to upload its moves.
-              if ((await local.games.get(id))?.retired) await local.games.delete(id);
-              else await local.games.update(id, { found: result.found, hints: result.hints, completed: result.completed, revision: result.revision });
-            }
+            await local.moves.bulkDelete([...result.acknowledged, ...result.rejected.map((item) => item.id)]);
+            const remaining = await local.moves.where("gameId").equals(id).toArray();
+            const saved = await local.games.get(id);
+            if (!saved) return;
+            if (!remaining.length && saved.retired) { await local.games.delete(id); return; }
+            const waiting = (kind: Move["kind"]) => remaining.filter((move) => move.kind === kind).map((move) => move.word!).filter(Boolean);
+            await local.games.update(id, {
+              found: [...new Set([...result.found, ...waiting("find")])],
+              hints: [...new Set([...result.hints, ...waiting("hint")])],
+              completed: result.completed || remaining.some((move) => move.kind === "complete"),
+              revision: result.revision
+            });
           });
+          if (result.rejected.length) {
+            selectionFeedback = "";
+            message = result.rejected.length === 1
+              ? `Et offlinetræk blev afvist af serveren: ${result.rejected[0].error}`
+              : `${result.rejected.length} offlinetræk blev afvist af serveren, fx: ${result.rejected[0].error}`;
+          }
         }
       }
       await refreshLocal();
