@@ -9,6 +9,7 @@ import { dataFile, db, migrateGameData } from "./database.js";
 import { finishSetup, prepareSetupToken, setupNeeded, setupTokenMatches } from "./setup.js";
 import { importBundledCor } from "./lexicon.js";
 import { achievementsForUser, statsForUser } from "./achievements.js";
+import { challengeState } from "./challenges.js";
 import { campaignNeeds, campaignsForUser, refillCampaign, startCampaign } from "./campaigns.js";
 import { PuzzleSupply, SupplyBusyError, workerGenerator } from "./supply.js";
 import { applyGameEvents, loadGameForUser, type GameRow } from "./game-sync.js";
@@ -108,6 +109,11 @@ app.get("/api/categories", async (req, res) => {
 app.get("/api/achievements", async (req, res) => {
   const current = await user(req, res); if (!current) return;
   res.json(achievementsForUser(db, current.id));
+});
+
+app.get("/api/challenges", async (req, res) => {
+  const current = await user(req, res); if (!current) return;
+  res.json(challengeState(db, current.id, childFor(current.id)));
 });
 
 app.get("/api/stats", async (req, res) => {

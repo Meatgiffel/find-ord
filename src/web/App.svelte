@@ -8,6 +8,7 @@
   import { applyUpdate, updateReady } from "./pwa.js";
   import { newMoveId } from "./ids.js";
   import { ACHIEVEMENT_ICONS, nextGoals, type Achievement } from "../shared/achievements.js";
+  import { START_CREDITS, type ChallengeState } from "../shared/challenges.js";
 
   type Identity = Omit<StoredIdentity, "key">;
   type ServerIdentity = Identity & { puzzleVersions: PuzzleVersions };
@@ -56,6 +57,11 @@
   let changingPassword = false;
   let showAccounts = false;
   let achievements: Achievement[] = [];
+  // Confirmed by the server; hints still in the outbox are subtracted locally.
+  let challengeInfo: ChallengeState | null = null;
+  let pendingHints = 0;
+  $: credits = Math.max(0, (challengeInfo?.balance ?? START_CREDITS) - pendingHints);
+  let goalsCard: HTMLElement | undefined;
   let newAchievements: Achievement[] = [];
   let achievementFilter: "all" | "unlocked" | "locked" = "all";
   let stats: PlayerStats | null = null;
@@ -110,6 +116,7 @@
     campaigns = await local.campaigns.where("owner").equals(identity.id).toArray();
     const queued = await local.moves.where("owner").equals(identity.id).toArray();
     pending = queued.length;
+    pendingHints = queued.filter((move) => move.kind === "hint").length;
     pendingGameIds = [...new Set(queued.map((move) => move.gameId))];
     if (active) active = games.find((game) => game.id === active?.id) ?? null;
   }
@@ -219,6 +226,7 @@
         const cached = await local.achievements.get(identity.id);
         achievements = cached?.items ?? [];
         stats = cached?.stats ?? null;
+        challengeInfo = cached?.challenges ?? null;
         if (online) await syncAll();
         else await refreshLocal();
       }
@@ -266,6 +274,7 @@
       const cached = await local.achievements.get(me.id);
       achievements = cached?.items ?? [];
       stats = cached?.stats ?? null;
+      challengeInfo = cached?.challenges ?? null;
       await syncAll();
     } catch (cause) { message = cause instanceof Error ? cause.message : "Login mislykkedes."; }
     finally { busy = false; }
@@ -283,7 +292,7 @@
     }
     if (serverDone) await eraseLocal();
     else await offlineSignOut();
-    identity = null; serverVersions = null; sessionExpired = false; active = null; games = []; campaigns = []; pending = 0; pendingGameIds = []; showAccounts = false; achievements = [];
+    identity = null; serverVersions = null; sessionExpired = false; active = null; games = []; campaigns = []; pending = 0; pendingGameIds = []; showAccounts = false; achievements = []; challengeInfo = null; pendingHints = 0;
     message = serverDone ? "Du er logget ud." : "Du er logget ud på denne enhed. Serverudlogning sker ved næste forbindelse.";
   }
 
@@ -592,6 +601,10 @@
       message = "Alle hints på denne bane er brugt.";
       return;
     }
+    if (credits < 1) {
+      message = "Du har ingen hintkreditter. Klar et mål på forsiden for at få flere.";
+      return;
+    }
     const word = active.puzzle.words.find((candidate) => !active?.found.includes(candidate) && !active?.hints.includes(candidate));
     if (!word) { message = "Der er ikke flere hints til denne bane."; return; }
     const location = findWord(active.puzzle, word);
@@ -601,6 +614,13 @@
       if (await addMove({ id: newMoveId(), kind: "hint", word }, { found: active.found, hints: [...active.hints, word], completed: false }))
         selectionFeedback = `Hint til ${word}: begynd i række ${location.start.row + 1}, kolonne ${location.start.col + 1}.`;
     } finally { hintSaving = false; }
+  }
+
+  async function showGoals() {
+    active = null; selectedStart = null; message = "";
+    await tick();
+    goalsCard?.scrollIntoView({ block: "start" });
+    goalsCard?.focus();
   }
 
   async function abandon() {
@@ -696,7 +716,13 @@
         }
         achievements = items;
         stats = await api("/stats") as PlayerStats;
-        await local.achievements.put({ owner: identity.id, items, stats, updatedAt: Date.now() });
+        const nextChallenges = await api("/challenges") as ChallengeState;
+        // Announce challenges that were open before and have now paid their credit.
+        const open = new Set(challengeInfo?.challenges.map((item) => item.id) ?? []);
+        const paid = nextChallenges.recent.filter((item) => open.has(item.id));
+        if (paid.length && !active?.completed) message = `Mål klaret: ${paid.map((item) => item.title).join(", ")}. Du fik ${paid.length === 1 ? "1 hintkredit" : `${paid.length} hintkreditter`}.`;
+        challengeInfo = nextChallenges;
+        await local.achievements.put({ owner: identity.id, items, stats, challenges: nextChallenges, updatedAt: Date.now() });
       } catch { /* Spiltræk er allerede synkroniseret; belønninger opdateres ved næste kontakt. */ }
     } catch (cause) {
       if (cause instanceof Error && "status" in cause && cause.status === 401) {
@@ -861,6 +887,19 @@
         <button class="primary start-button" onclick={() => startGame()} disabled={busy || !online}>{busy ? "Danner bane…" : "Start bane →"}</button>
         {#if !online}<p class="muted">Nye baner kræver forbindelse. Hentede baner kan spilles offline.</p>{/if}
       </section>
+      <section class="card goals-card" id="goals" tabindex="-1" bind:this={goalsCard} aria-labelledby="goals-heading">
+        <div class="goals-head"><h2 id="goals-heading">Mål</h2><span class="credit-pill">Hintkreditter: {credits} af {challengeInfo?.max ?? 5}</span></div>
+        <p class="muted">Klar et mål for at få 1 hintkredit. Målene har ingen tidsfrist, og et hint koster 1 kredit.</p>
+        {#if challengeInfo}
+          <ul class="goal-list">{#each challengeInfo.challenges as goal (goal.id)}<li>
+            <strong>{goal.title}</strong>
+            <progress max={goal.target} value={goal.progress} aria-label={`${goal.title}: ${goal.progress} af ${goal.target}`}></progress>
+            <b>{goal.progress}/{goal.target}</b>
+            {#if goal.completed}<small>Klaret. Krediten venter, til du har plads under {challengeInfo.max}.</small>{/if}
+          </li>{/each}</ul>
+          {#if pending}<p class="muted">Træk, der venter på synkronisering, tælles med, når de er sendt.</p>{/if}
+        {:else}<p class="muted">Målene vises, når du har forbindelse.</p>{/if}
+      </section>
       <details class="card secondary-panel"><summary>Gemte enkeltbaner <span>{games.filter((game) => !game.campaignId).length}</span></summary>
         {#if games.some((game) => !game.campaignId)}
           <div class="saved-list">{#each games.filter((game) => !game.campaignId) as game (game.id)}<button onclick={() => chooseGame(game)}><span><strong>{CATEGORIES[game.puzzle.category].name}</strong><small>{LEVELS[game.puzzle.level].name} · {game.found.length}/{game.puzzle.words.length} ord</small></span><span class="saved-status">{game.abandoned ? "Opgivet" : game.completed ? "Gennemført" : shellReady ? "Klar offline" : "Afventer offlineapp"} ↗</span></button>{/each}</div>
@@ -978,8 +1017,9 @@
           <p class="selection-feedback" role="status">{selectionFeedback}</p>
           {#if message && message !== selectionFeedback}<div class="game-message" role="status"><span>{message}</span><button aria-label="Luk besked" onclick={() => message = ""}>×</button></div>{/if}
           {#if !active.completed}
-            <div class="hint-controls"><button class="secondary hint-button" onclick={hint} disabled={hintSaving || hintsRemaining(active.puzzle.level, active.hints) === 0}>Vis et hint</button><span>Hints tilbage: {hintsRemaining(active.puzzle.level, active.hints)}/{HINT_LIMIT[active.puzzle.level]}</span><button class="text-button abandon-button" onclick={abandon} disabled={markingWord || hintSaving}>Opgiv bane</button></div>
-            {#if hintsRemaining(active.puzzle.level, active.hints) === 0}<p class="hint-explanation">Alle hints på denne bane er brugt.</p>{/if}
+            <div class="hint-controls"><button class="secondary hint-button" onclick={hint} disabled={hintSaving || hintsRemaining(active.puzzle.level, active.hints) === 0 || credits < 1}>Vis et hint · 1 kredit</button><span>Hints tilbage: {hintsRemaining(active.puzzle.level, active.hints)}/{HINT_LIMIT[active.puzzle.level]} · Kreditter: {credits}</span><button class="text-button abandon-button" onclick={abandon} disabled={markingWord || hintSaving}>Opgiv bane</button></div>
+            {#if hintsRemaining(active.puzzle.level, active.hints) === 0}<p class="hint-explanation">Alle hints på denne bane er brugt.</p>
+            {:else if credits < 1}<p class="hint-explanation">Du har ingen hintkreditter. Klar et mål for at få flere. <button class="text-button" onclick={showGoals} disabled={markingWord}>Se målene</button></p>{/if}
           {/if}
         </section>
         <aside class="card word-card" id="word-list" tabindex="-1"><div class="grid-header"><span>ORDLISTE</span><span>{active.found.length} / {active.puzzle.words.length}</span><a class="grid-jump" href="#letter-grid">Til gitteret ↑</a></div><div class="words">

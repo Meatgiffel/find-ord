@@ -39,6 +39,7 @@ Alle endpoints nedenfor bruger cookie-session, bortset fra login. Ændrende app-
 | `POST /api/auth/sign-in/username` | Better Auth: `username`, `password` | Better Auth sætter session-cookie. `POST /api/auth/sign-up/email` afvises for offentligheden. |
 | `GET /api/me` | — | Konto-ID, navn, rolle, serverens `child` og `puzzleVersions` for regler, validering, ord, kategoritags og børnepolitik. |
 | `GET /api/categories` | — | Kategori-ID, navn og aktuelt tilgængelige niveauer. Kræver login. |
+| `GET /api/challenges` | – | `200` med `{balance, max, challenges, recent}`: hintkreditter, de 3 aktive mål med fremdrift og de senest udbetalte mål. Sync af et hint trækker 1 kredit; uden kredit afvises hintet med en forklaring. |
 | `POST /api/games` | `{category, level, requestId?}` | `201` med `{puzzle, found: [], hints: [], completed: false, revision: 0}`. Serveren bruger sessionens konto og børneflag og validerer kombinationen. Samme `requestId` med samme valg giver `200` med den samme bane; andre valg med samme ID giver `409`. Fuld kø eller udløbet tidsgrænse giver `503` med `Retry-After`. |
 | `GET /api/games` | — | Højst 30 af kontoens seneste uafsluttede enkeltbaner med pakke og fremdrift, så en anden enhed eller et nyt login kan fortsætte dem. Kampagnebaner leveres via `/api/campaigns`. |
 | `GET /api/games/:id` | — | Kun ejerens bane; `410` hvis kategori, ord eller sikkerhedspolitik gør den ugyldig. |

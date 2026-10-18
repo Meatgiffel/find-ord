@@ -10,11 +10,8 @@ let serial = 0;
 const event = (kind: Move["kind"], word?: string): Move => ({ id: `event-${++serial}`, kind, word });
 
 function insertPuzzle(level: LevelId): Puzzle {
-  // No built-in category currently has enough words for Expert. Exercise the
-  // shared limit with an Expert-level fixture until that level is playable.
-  const generatedLevel = level === "ekspert" ? "svaer" : level;
-  const category = (Object.keys(CATEGORIES) as CategoryId[]).find((id) => availableLevels(id).includes(generatedLevel))!;
-  const puzzle = { ...makePuzzle(`game-${level}`, category, generatedLevel, 91), level };
+  const category = (Object.keys(CATEGORIES) as CategoryId[]).find((id) => availableLevels(id).includes(level))!;
+  const puzzle = makePuzzle(`game-${level}`, category, level, 91);
   db.prepare("INSERT INTO game (id, user_id, category, level, puzzle, found, hints, completed, revision) VALUES (?, 'alice', ?, ?, ?, '[]', '[]', 0, 0)")
     .run(puzzle.id, category, level, JSON.stringify(puzzle));
   return puzzle;
@@ -34,6 +31,8 @@ describe("serverens hintbudget", () => {
   for (const level of ["let", "normal", "svaer", "ekspert"] as LevelId[]) {
     it(`håndhæver ${level} grænsen, også ved direkte kald og retry`, () => {
       const puzzle = insertPuzzle(level);
+      // Enough hint credits that only the per-game limit applies.
+      db.prepare("INSERT INTO hint_credit (user_id, ref, delta) VALUES ('alice', 'test', 10)").run();
       const moves = puzzle.words.slice(0, HINT_LIMIT[level]).map((word) => event("hint", word));
       const result = apply(puzzle.id, moves);
       expect(result.hints).toEqual(moves.map((move) => move.word));

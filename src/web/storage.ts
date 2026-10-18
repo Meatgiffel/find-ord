@@ -1,6 +1,7 @@
 import Dexie, { type Table } from "dexie";
 import { hintError, type Move, type Puzzle } from "../shared/game.js";
 import type { Achievement } from "../shared/achievements.js";
+import type { ChallengeState } from "../shared/challenges.js";
 import { revalidateLegacyPuzzle, validatePuzzle } from "../shared/validation.js";
 import type { LevelId } from "../shared/words.js";
 
@@ -10,7 +11,7 @@ export type DownloadedCampaign = { id: string; level: LevelId; games: Array<Omit
 export type StoredMove = Move & { id: string; gameId: string; owner: string; createdAt: number; sequence: number };
 export type StoredIdentity = { key: "identity"; id: string; name: string; username?: string | null; role?: string | null; child: boolean; avatar?: string | null };
 export type PlayerStats = { completed: number; found: number; unique: number; withoutHints: number; activeDays: number; byLevel: Record<string, number>; categoryTagVersion: number; byCategory: Array<{ category: string; completed: number; found: number }> };
-export type StoredAchievements = { owner: string; items: Achievement[]; updatedAt: number; stats?: PlayerStats };
+export type StoredAchievements = { owner: string; items: Achievement[]; updatedAt: number; stats?: PlayerStats; challenges?: ChallengeState };
 export type PuzzleVersions = { rules: number; validation: number; words: number; categories: number; childPolicy: number };
 type LocalMeta = { key: "logout"; pending: true };
 

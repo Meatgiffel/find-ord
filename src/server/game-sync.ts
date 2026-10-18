@@ -1,12 +1,15 @@
 import type Database from "better-sqlite3";
 import { hintError, wordAt, type Move, type Puzzle } from "../shared/game.js";
 import { awardAchievements } from "./achievements.js";
+import { spendCredit, updateChallenges } from "./challenges.js";
 
 export type GameRow = { id: string; user_id: string; category: string; level: string; puzzle: string; found: string; hints: string; completed: number; abandoned: number; revision: number };
 export type GameState = { found: string[]; hints: string[]; completed: boolean; abandoned: boolean; revision: number };
 export type SyncResult = GameState & { acknowledged: string[]; rejected: Array<{ id: string; error: string }> };
 
 export class GameSyncError extends Error {}
+
+export const NO_CREDITS = "Der var ingen hintkreditter tilbage, da hintet blev synkroniseret. Klar et mål på forsiden for at få flere.";
 
 export function loadGameForUser(db: Database.Database, gameId: string, userId: string): GameRow | undefined {
   return db.prepare("SELECT * FROM game WHERE id = ? AND user_id = ?").get(gameId, userId) as GameRow | undefined;
@@ -56,6 +59,11 @@ export function applyGameEvents(db: Database.Database, row: GameRow, userId: str
       const outcome = problem(event);
       if (outcome === "noop") { acknowledged.push(event.id); continue; }
       if (outcome) { rejected.push({ id: event.id, error: outcome }); continue; }
+      // A shown hint costs a credit in the same transaction as the event.
+      if (event.kind === "hint" && !spendCredit(db, userId, event.id)) {
+        rejected.push({ id: event.id, error: NO_CREDITS });
+        continue;
+      }
       if (event.kind === "find") found.add(event.word!);
       else if (event.kind === "hint") hints.add(event.word!);
       else if (event.kind === "abandon") abandoned = true;
@@ -69,6 +77,7 @@ export function applyGameEvents(db: Database.Database, row: GameRow, userId: str
       db.prepare("UPDATE game SET found = ?, hints = ?, completed = ?, abandoned = ?, revision = revision + 1 WHERE id = ?")
         .run(JSON.stringify([...found]), JSON.stringify([...hints]), completed ? 1 : 0, abandoned ? 1 : 0, row.id);
       awardAchievements(db, userId);
+      updateChallenges(db, userId, puzzle.child);
     }
   })();
   return { found: [...found], hints: [...hints], completed, abandoned, revision: row.revision + (applied ? 1 : 0), acknowledged, rejected };

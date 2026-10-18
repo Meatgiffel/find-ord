@@ -27,7 +27,16 @@ Startkategorierne er Farver, Dyr, Natur, Mad, Hjemmet, Skolen, Sport, Transport 
 
 ## Hjælp, pause og afslutning
 
-Et hint viser startfeltet for et endnu ikke fundet målord. Hintforbruget gemmes, før hintet vises. Samme ord kan kun få ét hint, og banens samlede grænse følger tabellen ovenfor. Pause bevarer banen uden tidsstraf. Opgivelse afslutter den konkrete bane uden gennemførelsesbelønning; et senere forsøg er en ny bane. Når alle ord er fundet, gennemføres banen én gang. Resultatet vises straks, mens endelig progression og achievements afventer servervalidering ved offline spil. Der er ingen nedtælling, tidsbonus eller tidsbaserede achievements.
+Et hint viser startfeltet for et endnu ikke fundet målord. Hintforbruget gemmes, før hintet vises. Samme ord kan kun få ét hint, og banens samlede grænse følger tabellen ovenfor. Hvert hint koster desuden 1 hintkredit.
+
+## Mål og hintkreditter
+
+Hver konto starter med 2 hintkreditter og kan højst have 5. Der er altid 3 aktive mål af forskellige typer: find et antal ord, find ord med Æ, Ø eller Å, find lange ord (mindst 8 bogstaver), gennemfør en bane uden hint, gennemfør en bane i en bestemt kategori, eller gennemfør en bane på et bestemt niveau (Normal eller sværere). Kategorier og niveauer vælges kun blandt dem, profilen kan spille. Målene har ingen tidsfrist og kræver ingen daglige serier, og de kan alle klares uden hints.
+
+- Et mål tæller kun validerede træk, som serveren har modtaget efter målets start. Gentaget synkronisering og genåbning tæller ikke dobbelt.
+- Et klaret mål giver 1 kredit én gang. Er saldoen fuld, venter krediten, og målet bliver stående, til der er plads. Derefter erstattes det af et nyt mål.
+- Kreditter kan ikke købes og udløber ikke. Et hint trækker 1 kredit i samme transaktion som hintet. Samme hint koster aldrig to gange, og saldoen bliver aldrig negativ.
+- Offline bruges den senest bekræftede saldo minus de hints, der venter på synkronisering. Bruger to offlineenheder den samme kredit, afviser serveren det hint, der kommer sidst, og forklarer hvorfor. Ordfund i samme synkronisering gemmes stadig. Fremdrift på mål vises først, når serveren har godkendt trækkene. Pause bevarer banen uden tidsstraf. Opgivelse afslutter den konkrete bane uden gennemførelsesbelønning; et senere forsøg er en ny bane. Når alle ord er fundet, gennemføres banen én gang. Resultatet vises straks, mens endelig progression og achievements afventer servervalidering ved offline spil. Der er ingen nedtælling, tidsbonus eller tidsbaserede achievements.
 
 Kataloget har 40 achievements. Tildelinger fratages aldrig. Tre mål kræver Ekspert. Ændres en regel eller tærskel, får målet et nyt ID, og den gamle tildeling bevares i historikken.
 

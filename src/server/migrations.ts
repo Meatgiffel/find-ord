@@ -150,6 +150,35 @@ const migrations: Migration[] = [
         );
       `);
     }
+  },
+  {
+    version: 9,
+    apply(db) {
+      // Mini challenges count validated events after after_event (a game_event rowid).
+      // Hint credits are a ledger; the balance is the start amount plus all deltas, and
+      // ref makes each reward and each paid hint happen once.
+      db.exec(`
+        CREATE TABLE challenge (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+          kind TEXT NOT NULL,
+          param TEXT,
+          target INTEGER NOT NULL,
+          after_event INTEGER NOT NULL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          completed_at TEXT,
+          claimed_at TEXT
+        );
+        CREATE INDEX challenge_user ON challenge (user_id, claimed_at);
+        CREATE TABLE hint_credit (
+          user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+          ref TEXT NOT NULL,
+          delta INTEGER NOT NULL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (user_id, ref)
+        );
+      `);
+    }
   }
 ];
 
