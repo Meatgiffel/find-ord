@@ -90,6 +90,16 @@ const migrations: Migration[] = [
         CREATE INDEX campaign_game_queue ON campaign_game(campaign_id, retired, position);
       `);
     }
+  },
+  {
+    version: 5,
+    apply(db) {
+      // An abandoned game is finished without a completion reward.
+      db.exec(`
+        ALTER TABLE game ADD COLUMN abandoned INTEGER NOT NULL DEFAULT 0 CHECK (abandoned IN (0,1));
+        CREATE UNIQUE INDEX game_one_abandon ON game_event(game_id) WHERE kind = 'abandon';
+      `);
+    }
   }
 ];
 

@@ -36,6 +36,17 @@ describe("kampagnekø", () => {
     } finally { db.close(); }
   });
 
+  it("leverer ikke en opgivet bane igen og fylder køen op", () => {
+    const db = database();
+    try {
+      const first = startCampaign(db, "alice", "let", false);
+      db.prepare("UPDATE game SET abandoned = 1 WHERE id = ?").run(first.games[0].puzzle.id);
+      const next = refillCampaign(db, first.id, "alice", false)!;
+      expect(next.games.map((game) => game.campaignPosition)).toEqual([2, 3, 4]);
+      expect(next.games.some((game) => game.puzzle.id === first.games[0].puzzle.id)).toBe(false);
+    } finally { db.close(); }
+  });
+
   it("holder sværhedsgrader og ejere adskilt", () => {
     const db = database();
     try {

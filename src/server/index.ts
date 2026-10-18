@@ -39,7 +39,7 @@ function childFor(userId: string): boolean {
   return Boolean((db.prepare("SELECT child FROM profile WHERE user_id = ?").get(userId) as { child: number } | undefined)?.child);
 }
 function serializedGame(row: GameRow) {
-  return { puzzle: JSON.parse(row.puzzle) as Puzzle, found: JSON.parse(row.found) as string[], hints: JSON.parse(row.hints) as string[], completed: Boolean(row.completed), revision: row.revision };
+  return { puzzle: JSON.parse(row.puzzle) as Puzzle, found: JSON.parse(row.found) as string[], hints: JSON.parse(row.hints) as string[], completed: Boolean(row.completed), abandoned: Boolean(row.abandoned), revision: row.revision };
 }
 
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
@@ -110,14 +110,14 @@ app.post("/api/games", async (req, res) => {
   if (validatePuzzle(puzzle)) return error(res, 503, "Banen kunne ikke valideres. Prøv igen.");
   db.prepare("INSERT INTO game (id, user_id, category, level, puzzle) VALUES (?, ?, ?, ?, ?)")
     .run(id, current.id, category, level, JSON.stringify(puzzle));
-  res.status(201).json({ puzzle, found: [], hints: [], completed: false, revision: 0 });
+  res.status(201).json({ puzzle, found: [], hints: [], completed: false, abandoned: false, revision: 0 });
 });
 
 app.get("/api/games", async (req, res) => {
   const current = await user(req, res); if (!current) return;
   // Unfinished single games, so another device or a new login can continue them.
   // Campaign games are delivered through /api/campaigns.
-  const rows = db.prepare(`SELECT * FROM game WHERE user_id = ? AND completed = 0
+  const rows = db.prepare(`SELECT * FROM game WHERE user_id = ? AND completed = 0 AND abandoned = 0
     AND id NOT IN (SELECT game_id FROM campaign_game) ORDER BY created_at DESC LIMIT 30`).all(current.id) as GameRow[];
   const games = rows.map(serializedGame);
   const isChild = childFor(current.id);
@@ -136,7 +136,7 @@ app.get("/api/games/:id", async (req, res) => {
 const point = z.object({ row: z.number().int().nonnegative(), col: z.number().int().nonnegative() });
 const eventSchema = z.object({
   id: z.string().uuid(),
-  kind: z.enum(["find", "hint", "complete"]),
+  kind: z.enum(["find", "hint", "complete", "abandon"]),
   word: z.string().optional(),
   start: point.optional(),
   end: point.optional()

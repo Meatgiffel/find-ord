@@ -363,7 +363,7 @@
     active = game;
   }
 
-  async function addMove(move: Move, next: Pick<StoredGame, "found" | "hints" | "completed">): Promise<boolean> {
+  async function addMove(move: Move, next: Pick<StoredGame, "found" | "hints" | "completed" | "abandoned">): Promise<boolean> {
     if (!active) return false;
     try {
       await recordMove(active, move, next);
@@ -559,6 +559,17 @@
     } finally { hintSaving = false; }
   }
 
+  async function abandon() {
+    if (!active || active.completed || markingWord || hintSaving) return;
+    if (!confirm("Opgiv banen? En opgivet bane tæller ikke som gennemført og kan ikke spilles videre.")) return;
+    selectedStart = null;
+    if (!await addMove({ id: newMoveId(), kind: "abandon" }, { found: active.found, hints: active.hints, completed: true, abandoned: true })) return;
+    selectionFeedback = "";
+    message = "Banen er opgivet.";
+    await tick();
+    completionHeading?.focus();
+  }
+
   async function syncAll(): Promise<void> {
     if (syncTask) { syncAgain = true; return syncTask; }
     syncTask = (async () => {
@@ -580,7 +591,7 @@
         for (const id of ids) {
           const moves = (await local.moves.where("gameId").equals(id).toArray()).sort((a, b) => a.sequence - b.sequence).slice(0, 500);
           if (!moves.length) continue;
-          let result: { found: string[]; hints: string[]; completed: boolean; revision: number; acknowledged: string[]; rejected: Array<{ id: string; error: string }> };
+          let result: { found: string[]; hints: string[]; completed: boolean; abandoned: boolean; revision: number; acknowledged: string[]; rejected: Array<{ id: string; error: string }> };
           try { result = await api(`/games/${id}/sync`, { method: "POST", body: JSON.stringify({ events: moves }) }); }
           catch (cause) {
             if (cause instanceof Error && "status" in cause && cause.status === 404) {
@@ -602,7 +613,9 @@
             await local.games.update(id, {
               found: [...new Set([...result.found, ...waiting("find")])],
               hints: [...new Set([...result.hints, ...waiting("hint")])],
-              completed: result.completed || remaining.some((move) => move.kind === "complete"),
+              // Locally, completed means finished: completed or abandoned.
+              completed: result.completed || result.abandoned || remaining.some((move) => move.kind === "complete" || move.kind === "abandon"),
+              abandoned: result.abandoned || remaining.some((move) => move.kind === "abandon"),
               revision: result.revision
             });
           });
@@ -703,7 +716,7 @@
       </section>
       <details class="card secondary-panel"><summary>Gemte enkeltbaner <span>{games.filter((game) => !game.campaignId).length}</span></summary>
         {#if games.some((game) => !game.campaignId)}
-          <div class="saved-list">{#each games.filter((game) => !game.campaignId) as game (game.id)}<button onclick={() => chooseGame(game)}><span><strong>{CATEGORIES[game.puzzle.category].name}</strong><small>{LEVELS[game.puzzle.level].name} · {game.found.length}/{game.puzzle.words.length} ord</small></span><span class="saved-status">{game.completed ? "Gennemført" : shellReady ? "Klar offline" : "Afventer offlineapp"} ↗</span></button>{/each}</div>
+          <div class="saved-list">{#each games.filter((game) => !game.campaignId) as game (game.id)}<button onclick={() => chooseGame(game)}><span><strong>{CATEGORIES[game.puzzle.category].name}</strong><small>{LEVELS[game.puzzle.level].name} · {game.found.length}/{game.puzzle.words.length} ord</small></span><span class="saved-status">{game.abandoned ? "Opgivet" : game.completed ? "Gennemført" : shellReady ? "Klar offline" : "Afventer offlineapp"} ↗</span></button>{/each}</div>
         {:else}<p class="muted">Dine hentede baner vises her.</p>{/if}
         {#if !storagePersisted}<p class="muted">Browseren kan slette hentede baner ved pladsmangel. Synkronisér, før du rydder browserdata.</p>{/if}
         {#if online && pending}<button class="secondary" onclick={syncAll}>Synkronisér nu</button>{/if}
@@ -734,11 +747,11 @@
         {#if identity.child}<details class="game-child-notice"><summary>Børneindhold under gennemgang</summary><p>Børneordlisten og kontrollen af skjulte ord er stadig under gennemgang. Spil sammen med en voksen i denne første udgave. Hentede baner kan fortsættes offline; ændringer i sikkerhedskontrollen tjekkes ved næste forbindelse.</p></details>{/if}
       </section>
       <div class="game-layout" class:completed-layout={active.completed}>
-        <section class="card grid-card"><div class="grid-header"><span>{active.completed ? "BANE GENNEMFØRT" : "FIND ORDENE"}</span><span>{active.found.length} / {active.puzzle.words.length}</span><a class="word-jump" href="#word-list">Se ordlisten ↓</a></div>
+        <section class="card grid-card"><div class="grid-header"><span>{active.abandoned ? "BANE OPGIVET" : active.completed ? "BANE GENNEMFØRT" : "FIND ORDENE"}</span><span>{active.found.length} / {active.puzzle.words.length}</span><a class="word-jump" href="#word-list">Se ordlisten ↓</a></div>
           {#if active.completed}
             <div class="completion-panel" aria-live="polite">
-              <h2 tabindex="-1" bind:this={completionHeading}>Bane gennemført!</h2>
-              <p>Du fandt {active.found.length} af {active.puzzle.words.length} ord.</p>
+              <h2 tabindex="-1" bind:this={completionHeading}>{active.abandoned ? "Bane opgivet" : "Bane gennemført!"}</h2>
+              <p>Du fandt {active.found.length} af {active.puzzle.words.length} ord.{active.abandoned ? " En opgivet bane tæller ikke som gennemført." : ""}</p>
               <p class="completion-sync">{activePending ? "Resultatet er gemt på enheden og afventer synkronisering." : "Resultatet er gemt."}</p>
               <div class="completion-actions">
                 {#if active.campaignId}<button class="primary" onclick={nextInCampaign} disabled={busy}>Næste bane →</button>
@@ -764,7 +777,7 @@
           <p class="selection-feedback" role="status">{selectionFeedback}</p>
           {#if message && message !== selectionFeedback}<div class="game-message" role="status"><span>{message}</span><button aria-label="Luk besked" onclick={() => message = ""}>×</button></div>{/if}
           {#if !active.completed}
-            <div class="hint-controls"><button class="secondary hint-button" onclick={hint} disabled={hintSaving || hintsRemaining(active.puzzle.level, active.hints) === 0}>Vis et hint</button><span>Hints tilbage: {hintsRemaining(active.puzzle.level, active.hints)}/{HINT_LIMIT[active.puzzle.level]}</span></div>
+            <div class="hint-controls"><button class="secondary hint-button" onclick={hint} disabled={hintSaving || hintsRemaining(active.puzzle.level, active.hints) === 0}>Vis et hint</button><span>Hints tilbage: {hintsRemaining(active.puzzle.level, active.hints)}/{HINT_LIMIT[active.puzzle.level]}</span><button class="text-button abandon-button" onclick={abandon} disabled={markingWord || hintSaving}>Opgiv bane</button></div>
             {#if hintsRemaining(active.puzzle.level, active.hints) === 0}<p class="hint-explanation">Alle hints på denne bane er brugt.</p>{/if}
           {/if}
         </section>

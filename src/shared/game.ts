@@ -17,7 +17,7 @@ export type Puzzle = {
   child: boolean;
   childPolicyVersion: number | null;
 };
-export type Move = { id: string; kind: "find" | "hint" | "complete"; word?: string; start?: Point; end?: Point };
+export type Move = { id: string; kind: "find" | "hint" | "complete" | "abandon"; word?: string; start?: Point; end?: Point };
 
 export const HINT_LIMIT: Record<LevelId, number> = { let: 1, normal: 2, svaer: 3, ekspert: 4 };
 

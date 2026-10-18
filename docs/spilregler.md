@@ -33,4 +33,4 @@ Et hint viser startfeltet for et endnu ikke fundet målord. Hintforbruget gemmes
 
 Spillet er single-player. Multiplayer, ranglister, daglige konkurrencer og udskrivning er ikke releasekrav. En fuldt hentet bane skal kunne spilles og afsluttes offline i en installérbar PWA på telefon/tablet, også efter lukning og genåbning. Første login og hentning af nye baner kræver serverkontakt. Frontend bruger Svelte, TypeScript og Vite. Authentication håndteres af Better Auth, ikke af egen password- eller sessionskode.
 
-Implementering og verifikation af reglerne er fordelt på de efterfølgende Linear-opgaver. Især eksplicit pause/opgivelse og redaktionelt godkendt børneindhold mangler i den nuværende udgave.
+Implementering og verifikation af reglerne er fordelt på de efterfølgende Linear-opgaver. Opgivelse er implementeret. Pause er i den nuværende udgave det samme som at forlade banen, der altid er gemt; en særskilt pausetilstand findes ikke. Redaktionelt godkendt børneindhold mangler fortsat.

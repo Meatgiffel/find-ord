@@ -34,11 +34,12 @@ describe("versionerede servermigrationer", () => {
     try {
       db.exec("CREATE TABLE user (id TEXT PRIMARY KEY)");
       migrateGameData(db);
-      expect(db.prepare("SELECT version FROM app_schema_migration ORDER BY version").all()).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }]);
+      expect(db.prepare("SELECT version FROM app_schema_migration ORDER BY version").all()).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }, { version: 5 }]);
       const columns = db.pragma("table_info(game)") as Array<{ name: string }>;
       expect(columns.some((column) => column.name === "revision")).toBe(true);
+      expect(columns.some((column) => column.name === "abandoned")).toBe(true);
       migrateGameData(db);
-      expect((db.prepare("SELECT COUNT(*) AS count FROM app_schema_migration").get() as { count: number }).count).toBe(4);
+      expect((db.prepare("SELECT COUNT(*) AS count FROM app_schema_migration").get() as { count: number }).count).toBe(5);
     } finally { db.close(); }
   });
 
@@ -65,7 +66,7 @@ describe("versionerede servermigrationer", () => {
       expect((db.prepare("SELECT COUNT(*) AS count FROM game_event").get() as { count: number }).count).toBe(2);
       db.prepare("DELETE FROM game_event WHERE id = 'find-2'").run();
       migrateGameData(db);
-      expect((db.prepare("SELECT MAX(version) AS version FROM app_schema_migration").get() as { version: number }).version).toBe(4);
+      expect((db.prepare("SELECT MAX(version) AS version FROM app_schema_migration").get() as { version: number }).version).toBe(5);
       expect(() => insert.run("find-3")).toThrow();
     } finally { db.close(); }
   });

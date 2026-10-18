@@ -25,7 +25,7 @@ describe("serverens hintbudget", () => {
   beforeEach(() => {
     serial = 0;
     db = new Database(":memory:");
-    db.exec("CREATE TABLE game (id TEXT PRIMARY KEY, user_id TEXT, category TEXT, level TEXT, puzzle TEXT, found TEXT, hints TEXT, completed INTEGER, revision INTEGER); CREATE TABLE game_event (id TEXT PRIMARY KEY, game_id TEXT, user_id TEXT, kind TEXT, word TEXT)");
+    db.exec("CREATE TABLE game (id TEXT PRIMARY KEY, user_id TEXT, category TEXT, level TEXT, puzzle TEXT, found TEXT, hints TEXT, completed INTEGER, abandoned INTEGER DEFAULT 0, revision INTEGER); CREATE TABLE game_event (id TEXT PRIMARY KEY, game_id TEXT, user_id TEXT, kind TEXT, word TEXT)");
   });
   afterEach(() => db.close());
 
@@ -80,6 +80,19 @@ describe("serverens hintbudget", () => {
     expect(result.completed).toBe(true);
     expect(result.rejected).toEqual([{ id: late.id, error: "Banen er allerede afsluttet." }]);
     expect(JSON.parse(row(puzzle.id).hints)).toEqual([]);
+  });
+
+  it("opgiver en bane uden gennemførelse og afviser senere træk", () => {
+    const puzzle = insertPuzzle("let");
+    const word = puzzle.words[0];
+    const find = { ...event("find", word), ...findWord(puzzle, word)! };
+    const giveUp = event("abandon");
+    const result = apply(puzzle.id, [find, giveUp]);
+    expect(result).toMatchObject({ found: [word], completed: false, abandoned: true, rejected: [] });
+    expect(apply(puzzle.id, [giveUp])).toMatchObject({ acknowledged: [giveUp.id], rejected: [] });
+    const late = event("hint", puzzle.words[1]);
+    expect(apply(puzzle.id, [late]).rejected).toEqual([{ id: late.id, error: "Banen er opgivet." }]);
+    expect(row(puzzle.id)).toMatchObject({ completed: 0, abandoned: 1 });
   });
 
   it("bevarer gamle baner over grænsen og afviser kun nye hints", () => {

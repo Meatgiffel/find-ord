@@ -17,7 +17,7 @@ export type CampaignBundle = { id: string; level: LevelId; games: CampaignGame[]
 
 function queueRows(db: Database.Database, campaignId: string): QueueRow[] {
   return db.prepare(`SELECT cg.position, cg.game_id, cg.retired, g.category, g.level, g.puzzle,
-    g.found, g.hints, g.completed, g.revision
+    g.found, g.hints, (g.completed OR g.abandoned) AS completed, g.revision
     FROM campaign_game cg JOIN game g ON g.id = cg.game_id
     WHERE cg.campaign_id = ? ORDER BY cg.position`).all(campaignId) as QueueRow[];
 }

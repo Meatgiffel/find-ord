@@ -4,7 +4,7 @@ import type { Achievement } from "../shared/achievements.js";
 import { revalidateLegacyPuzzle, validatePuzzle } from "../shared/validation.js";
 import type { LevelId } from "../shared/words.js";
 
-export type StoredGame = { id: string; owner: string; puzzle: Puzzle; found: string[]; hints: string[]; completed: boolean; revision?: number; updatedAt: number; approvedAtDownload?: boolean; retired?: boolean; campaignId?: string; campaignPosition?: number };
+export type StoredGame = { id: string; owner: string; puzzle: Puzzle; found: string[]; hints: string[]; completed: boolean; abandoned?: boolean; revision?: number; updatedAt: number; approvedAtDownload?: boolean; retired?: boolean; campaignId?: string; campaignPosition?: number };
 export type StoredCampaign = { id: string; owner: string; level: LevelId };
 export type DownloadedCampaign = { id: string; level: LevelId; games: Array<Omit<StoredGame, "id" | "owner" | "updatedAt" | "approvedAtDownload">> };
 export type StoredMove = Move & { id: string; gameId: string; owner: string; createdAt: number; sequence: number };
@@ -165,10 +165,11 @@ export async function reconcileDownloadedGames(
   return { removed, interrupted: false };
 }
 
-export async function recordMove(game: StoredGame, move: Move, next: Pick<StoredGame, "found" | "hints" | "completed">): Promise<void> {
+export async function recordMove(game: StoredGame, move: Move, next: Pick<StoredGame, "found" | "hints" | "completed" | "abandoned">): Promise<void> {
   await local.transaction("rw", local.games, local.moves, async () => {
     const current = await local.games.get(game.id);
     if (!current || current.owner !== game.owner) throw new Error("Banen er ikke længere gemt på denne enhed.");
+    if (move.kind === "abandon" && current.completed) throw new Error("Banen er allerede afsluttet.");
     if (move.kind === "hint") {
       if (current.completed) throw new Error("Banen er allerede afsluttet.");
       const problem = hintError(current.puzzle, current.found, current.hints, move.word);

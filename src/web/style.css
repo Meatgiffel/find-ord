@@ -571,6 +571,11 @@ main.playing { padding-top: 18px; }
 .hint-explanation {
   margin: 8px 0 0;
 }
+.hint-controls .abandon-button {
+  margin-left: auto;
+  min-height: 44px;
+  color: #7a4a3a;
+}
 .completion-panel {
   margin-bottom: 20px;
   padding: 22px;
