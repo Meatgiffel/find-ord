@@ -11,7 +11,7 @@ Systemets moduler, aktuelle API og planlagte kontraktændringer står i [arkitek
 
 Den første spilbare udgave har ni kategorier, niveauer som ordpuljen tillader, enkeltbaner og endeløse kampagner, separat login, administration af nye konti, ordmarkering, hints, lokal lagring, synkronisering og 40 achievements. Ekspert er endnu ikke tilgængelig med de indbyggede ordpuljer.
 
-**Børneprofilen er ikke færdigvalideret.** Den bruger foreløbig de indbyggede temalister og en begrænset kontrol af skjulte udtryk i hele gitteret. Ord og sikkerhedspolitik kræver redaktionel gennemgang, før indholdet kan præsenteres som børnesikkert. Samtidige offlineenheder, automatisk backup/restore og fysisk test på iPhone, iPad og Android er heller ikke færdigverificeret.
+**Børneprofilen er ikke færdigvalideret.** Den bruger foreløbig de indbyggede temalister og en begrænset kontrol af skjulte udtryk i hele gitteret. Ord og sikkerhedspolitik kræver redaktionel gennemgang, før indholdet kan præsenteres som børnesikkert. Planlagt automatisk backup og fysisk test på iPhone, iPad og Android er heller ikke færdigverificeret.
 
 ## Start med Docker
 
@@ -67,19 +67,29 @@ Generatorprøven bruger 1.000 reproducerbare seeds pr. tilgængelig kategori, ni
 
 Tests bruger midlertidige SQLite-databaser og kontrollerede ord-fixtures. HTTP-integrationstesten starter en lokal server og kontrollerer login, adgang til egne baner og afvisning af ugyldige kald. Testene kræver ikke internet eller private driftsdata.
 
-## Backup og opdatering
+## Backup, restore og opdatering
 
-En enkel manuel backup tages med servicen stoppet, så SQLite og authentication-hemmeligheden kopieres konsistent:
+Backup kan tages, mens servicen kører. Den bruger SQLites online backup, kontrollerer kopien og gemmer database, `auth-secret` og et manifest med versioner, antal og SHA-256 i en ny mappe. En afbrudt backup efterlades som `.partial` og kan ikke gendannes.
+
+```sh
+docker compose exec find-ord npm run backup -- /app/data/backups
+docker cp find-ord:/app/data/backups/. ../find-ord-backups/
+docker compose exec find-ord rm -rf /app/data/backups
+```
+
+Opbevar backupmappen et sikkert sted uden for repositoryet; filerne har rettighed `600`, og `auth-secret` giver adgang til sessioner. Sættes hemmeligheden med `BETTER_AUTH_SECRET` i stedet for filen, skal du selv gemme den. Backuppen indeholder kun data, serveren har modtaget: synkronisér alle enheder (forsiden viser “Alt er synkroniseret”) før backup eller flytning.
+
+Restore kontrollerer checksum, integritet og skemaversion, før noget ændres. En eksisterende database erstattes kun med `--replace` og gemmes først som `find-ord.sqlite.before-restore-<tid>`:
 
 ```sh
 docker compose stop find-ord
-backup_dir="../find-ord-backup-$(date +%Y%m%d-%H%M%S)"
-mkdir -m 700 "$backup_dir"
-docker cp find-ord:/app/data/. "$backup_dir/"
+docker compose run --rm -v "$PWD/../find-ord-backups/find-ord-backup-<tid>:/restore:ro" find-ord npm run restore -- /restore --replace
 docker compose start find-ord
 ```
 
-Opbevar backupmappen sikkert uden for repositoryet. Ved opdatering tages backup først, og derefter køres `docker compose up -d --build` uden at fjerne volumet. Automatisk backup og afprøvet restore mangler stadig.
+Containeren kører som uid 1000; backupfilerne skal kunne læses af den bruger. Lokalt uden Docker hedder kommandoerne `npm run backup -- <mappe>` og `npm run restore -- <backupmappe> [--replace]` og bruger `DATA_FILE`.
+
+Ved opdatering: tag backup, kør `docker compose up -d --build`, og behold volumet. Migrationer kører ved start i transaktioner; fejler en, beholdes de eksisterende data, og servicen starter ikke. Rul tilbage ved at bygge den tidligere udgave (`git checkout <tidligere commit>`) og gendanne backuppen fra før opdateringen. En backup fra en nyere udgave afvises af en ældre. Hold databasen på lokal disk i Docker-volumet, ikke på et delt netværksfilsystem; SQLite i WAL-tilstand understøtter det ikke.
 
 ## Ordgrundlag
 

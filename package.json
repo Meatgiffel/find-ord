@@ -14,10 +14,12 @@
     "start": "node dist/server/index.js",
     "check": "svelte-check --tsconfig ./tsconfig.json && tsc --noEmit -p tsconfig.server.json",
     "lint": "eslint src scripts vite.config.ts svelte.config.js",
-    "test": "vitest run src/shared src/web src/server/migrations.test.ts src/server/campaigns.test.ts src/server/game-sync.test.ts src/server/http-auth.test.ts",
+    "test": "vitest run src/shared src/web src/server/migrations.test.ts src/server/campaigns.test.ts src/server/game-sync.test.ts src/server/http-auth.test.ts src/server/backup.test.ts",
     "test:generator": "tsx scripts/validate-generator.ts",
     "import:words": "tsx scripts/import-words.ts",
-    "bootstrap": "tsx scripts/bootstrap.ts"
+    "bootstrap": "tsx scripts/bootstrap.ts",
+    "backup": "tsx scripts/backup.ts",
+    "restore": "tsx scripts/restore.ts"
   },
   "dependencies": {
     "@inquirer/prompts": "^8.7.3",

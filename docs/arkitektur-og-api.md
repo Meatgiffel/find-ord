@@ -12,6 +12,7 @@ Find ord har én applikationscontainer med Node/Express, Better Auth, SQLite og 
 | Ordgrundlag | Versioneret COR-import, kategorier og godkendelsespolitik | `src/server/lexicon.ts`, `src/shared/words.ts`, `src/shared/safety.ts` |
 | Generator og validering | Deterministisk grid, lovlige retninger, versioner og sikkerhedstjek | `src/shared/game.ts`, `src/shared/validation.ts` |
 | Spil og synkronisering | Personlige baner, validerede fund/hints, hændelser og completion | `src/server/game-sync.ts`, `src/web/storage.ts` |
+| Backup og restore | Konsistent snapshot, verificeret gendannelse, versioner og checksum | `src/server/backup.ts`, `scripts/backup.ts`, `scripts/restore.ts` |
 | Statistik og achievements | Servergodkendt progression; lokal visning kan være foreløbig | `src/server/achievements.ts`, `src/shared/achievements.ts` |
 | PWA | Manifest og Workbox-appcache; kontoafgrænsede baner/outbox i Dexie | `vite.config.ts`, `src/web/storage.ts` |
 

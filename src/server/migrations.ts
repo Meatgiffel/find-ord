@@ -103,6 +103,8 @@ const migrations: Migration[] = [
   }
 ];
 
+export const LATEST_MIGRATION = migrations.at(-1)!.version;
+
 export function migrateGameData(db: Database.Database): void {
   db.exec(`CREATE TABLE IF NOT EXISTS app_schema_migration (
     version INTEGER PRIMARY KEY,
