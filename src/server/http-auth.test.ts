@@ -48,13 +48,16 @@ describe("HTTP-adgangskontrol", () => {
       ]);
       await (await getMigrations(auth.options)).runMigrations();
       migrateGameData(db);
-      for (const username of ["alice", "bob"]) {
+      const ids: Record<string, string> = {};
+      for (const username of ["alice", "bob", "root", "kid"]) {
         const result = await auth.api.signUpEmail({ body: {
           email: `${username}@users.find-ord.invalid`, name: username, username, password: "test-password-123"
         } });
         expect(result.user).toBeDefined();
-        db.prepare("INSERT INTO profile (user_id, child) VALUES (?, 0)").run(result.user!.id);
+        ids[username] = result.user!.id;
+        db.prepare("INSERT INTO profile (user_id, child) VALUES (?, ?)").run(result.user!.id, username === "kid" ? 1 : 0);
       }
+      db.prepare("UPDATE user SET role = 'admin' WHERE id = ?").run(ids.root);
       db.close();
 
       child = spawn(process.execPath, ["--import", "tsx", "src/server/index.ts"], {
@@ -119,6 +122,26 @@ describe("HTTP-adgangskontrol", () => {
         body: JSON.stringify({ category: "dyr", level: "let" })
       })).status).toBe(403);
       expect((await fetch(`${baseURL}/api/accounts`, { headers: { Cookie: alice } })).status).toBe(403);
+
+      // Account rules on Better Auth's admin routes.
+      const root = await login("root");
+      const adminCall = (path: string, body: object) => fetch(`${baseURL}/api/auth/admin/${path}`, {
+        method: "POST", headers: { Origin: baseURL, Cookie: root, "Content-Type": "application/json" }, body: JSON.stringify(body)
+      });
+      expect((await adminCall("set-role", { userId: ids.kid, role: "admin" })).status).toBe(403);
+      expect((await adminCall("update-user", { userId: ids.kid, data: { role: "admin" } })).status).toBe(403);
+      expect((await adminCall("set-role", { userId: ids.root, role: "user" })).status).toBe(403);
+      expect((await adminCall("remove-user", { userId: ids.root })).status).toBe(403);
+      expect((await adminCall("ban-user", { userId: ids.root })).status).toBe(403);
+      expect((await adminCall("create-user", { email: "x@users.find-ord.invalid", name: "x", password: "test-password-123" })).status).toBe(403);
+      const duplicate = await fetch(`${baseURL}/api/accounts`, {
+        method: "POST", headers: { Origin: baseURL, Cookie: root, "Content-Type": "application/json" },
+        body: JSON.stringify({ username: "Bob", name: "Bob", password: "test-password-123", child: false })
+      });
+      expect(duplicate.status).toBe(409);
+      expect((await duplicate.json() as { error: string }).error).toBe("Brugernavnet er allerede i brug.");
+      expect((await adminCall("set-role", { userId: ids.bob, role: "admin" })).status).toBe(200);
+      expect((await adminCall("set-role", { userId: ids.root, role: "user" })).status).toBe(200);
     } finally {
       if (child && child.exitCode === null) {
         const exited = once(child, "exit");

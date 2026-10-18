@@ -170,10 +170,17 @@ app.post("/api/accounts", async (req, res) => {
   const parsed = accountSchema.safeParse(req.body);
   if (!parsed.success) return error(res, 400, "Udfyld navn, brugernavn og adgangskode (mindst 8 tegn).");
   const { username, name, password, child } = parsed.data;
+  // Better Auth stores usernames in lower case, so "Bob" and "bob" are the same account.
+  if (db.prepare("SELECT 1 FROM user WHERE username = ?").get(username.toLowerCase())) return error(res, 409, "Brugernavnet er allerede i brug.");
   try {
     const result = await auth.api.signUpEmail({ body: { email: `${username.toLowerCase()}@users.find-ord.invalid`, name, password, username } });
     if (!result.user) throw new Error("Kontoen kunne ikke oprettes.");
-    db.prepare("INSERT INTO profile (user_id, child) VALUES (?, ?)").run(result.user.id, child ? 1 : 0);
+    try { db.prepare("INSERT INTO profile (user_id, child) VALUES (?, ?)").run(result.user.id, child ? 1 : 0); }
+    catch (cause) {
+      // Never leave an account without its intended profile; sessions and credentials cascade.
+      db.prepare("DELETE FROM user WHERE id = ?").run(result.user.id);
+      throw cause;
+    }
     res.status(201).json({ id: result.user.id, name, username, child });
   } catch { error(res, 409, "Brugernavnet findes allerede, eller kontoen kunne ikke oprettes."); }
 });

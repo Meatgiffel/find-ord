@@ -44,7 +44,8 @@ Alle endpoints nedenfor bruger cookie-session, bortset fra login. Ændrende app-
 | `POST /api/games/:id/sync` | `{events: Move[]}`, højst 500 | `200` med `{found, hints, completed, revision, acknowledged, rejected}` efter servervalidering. Se hændelsesformatet nedenfor. Accepteres også for ejerens udgåede bane, så offlinefremdrift ikke tabes; svaret indeholder intet baneindhold. Klienten skjuler en udgået bane med usynkroniserede træk og sletter den først, når trækkene er kvitteret. |
 | `GET /api/achievements` | — | Serverberegnet liste over kontoens achievements og fremdrift. |
 | `GET /api/accounts` | — | Kun admin: kontoliste uden passwords. |
-| `POST /api/accounts` | `{username, name, password, child}` | Kun admin: `201` med offentlig kontoprofil; `400` ugyldigt input, `409` duplikat/oprettelsesfejl. |
+| `POST /api/accounts` | `{username, name, password, child}` | Kun admin: `201` med offentlig kontoprofil; `400` ugyldigt input, `409` "Brugernavnet er allerede i brug." eller oprettelsesfejl. Brugernavne er 3–30 tegn af A–Z, 0–9, `_`, `.`, `-` og gemmes med små bogstaver, så `Bob` og `bob` er samme navn. Konto og profil oprettes samlet; fejler profilen, slettes kontoen igen. |
+| Better Auth `/api/auth/admin/*` | Bibliotekets admin-API | Kun admin. Appen afviser `create-user` (konti oprettes via `POST /api/accounts`), admin-rolle til børnekonti samt degradering, udelukkelse eller sletning af den sidste administrator (`403`). |
 
 En banepakke indeholder `puzzle.id`, `category`, `level`, `grid`, `words`, `seed`, `child` samt `version`, `wordListVersion`, `categoryTagVersion`, `validationVersion` og `childPolicyVersion`. Konto-ID sendes ikke som autoritativt felt i banepakken; serveren binder spillet til sessionens bruger, og Dexie gemmer ejeren lokalt. Historik indeholder samme kategori-ID og tagversion gennem den gemte pakke. Ord fra COR importeres lokalt, men bruges ikke som målord, før de er godkendt og kategoriseret.
 
