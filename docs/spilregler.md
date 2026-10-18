@@ -29,7 +29,7 @@ Startkategorierne er Farver, Dyr, Natur, Mad, Hjemmet, Skolen, Sport, Transport 
 
 Et hint viser startfeltet for et endnu ikke fundet målord. Hintforbruget gemmes, før hintet vises. Samme ord kan kun få ét hint, og banens samlede grænse følger tabellen ovenfor. Pause bevarer banen uden tidsstraf. Opgivelse afslutter den konkrete bane uden gennemførelsesbelønning; et senere forsøg er en ny bane. Når alle ord er fundet, gennemføres banen én gang. Resultatet vises straks, mens endelig progression og achievements afventer servervalidering ved offline spil. Der er ingen nedtælling, tidsbonus eller tidsbaserede achievements.
 
-Kataloget har 40 achievements. Tildelinger fratages aldrig. Tre mål kræver Ekspert og kan først opnås, når niveauet bliver tilgængeligt i en kategori. Ændres en regel eller tærskel, får målet et nyt ID, og den gamle tildeling bevares i historikken.
+Kataloget har 40 achievements. Tildelinger fratages aldrig. Tre mål kræver Ekspert. Ændres en regel eller tærskel, får målet et nyt ID, og den gamle tildeling bevares i historikken.
 
 ## Første versions ramme
 

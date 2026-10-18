@@ -19,7 +19,7 @@ import { CHILD_POLICY_VERSION } from "../shared/safety.js";
 
 await (await getMigrations(auth.options)).runMigrations();
 migrateGameData(db);
-const corpus = await importBundledCor();
+const corpus = await importBundledCor(db);
 // LOG_LEVEL=error keeps only failures; the default "info" also logs startup and shutdown.
 const logInfo = process.env.LOG_LEVEL === "error" ? () => {} : (text: string) => console.log(text);
 logInfo(`COR ${corpus.imported} ordformer indlæst.`);
@@ -94,8 +94,9 @@ app.get("/api/me", async (req, res) => {
 });
 
 app.get("/api/categories", async (req, res) => {
-  if (!await user(req, res)) return;
-  res.json(Object.entries(CATEGORIES).map(([id, category]) => ({ id, name: category.name, levels: availableLevels(id as CategoryId) })));
+  const current = await user(req, res); if (!current) return;
+  const child = childFor(current.id);
+  res.json(Object.entries(CATEGORIES).map(([id, category]) => ({ id, name: category.name, levels: availableLevels(id as CategoryId, child) })));
 });
 
 app.get("/api/achievements", async (req, res) => {
@@ -117,7 +118,7 @@ app.post("/api/campaigns", async (req, res) => {
   const current = await user(req, res); if (!current) return;
   const parsed = campaignSchema.safeParse(req.body);
   if (!parsed.success) return error(res, 400, "Vælg en gyldig sværhedsgrad.");
-  if (!campaignLevels().includes(parsed.data.level)) return error(res, 400, "Dette niveau er endnu ikke tilgængeligt i kampagner.");
+  if (!campaignLevels(childFor(current.id)).includes(parsed.data.level)) return error(res, 400, "Dette niveau er endnu ikke tilgængeligt i kampagner.");
   if (!creationAllowed(current.id)) return error(res, 429, CREATION_LIMITED);
   try { res.json(startCampaign(db, current.id, parsed.data.level, childFor(current.id))); }
   catch { error(res, 503, "Kampagnen kunne ikke oprettes. Prøv igen."); }
@@ -138,7 +139,7 @@ app.post("/api/games", async (req, res) => {
   const input = newGameSchema.safeParse(req.body);
   if (!input.success) return error(res, 400, "Vælg en gyldig kategori og sværhedsgrad.");
   const { category, level } = input.data;
-  if (!availableLevels(category).includes(level as LevelId)) return error(res, 400, "Dette niveau er endnu ikke tilgængeligt i kategorien.");
+  if (!availableLevels(category, childFor(current.id)).includes(level as LevelId)) return error(res, 400, "Dette niveau er endnu ikke tilgængeligt i kategorien.");
   if (!creationAllowed(current.id)) return error(res, 429, CREATION_LIMITED);
   const id = randomUUID();
   let puzzle: Puzzle;

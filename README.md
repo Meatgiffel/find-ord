@@ -9,9 +9,9 @@ Systemets moduler, aktuelle API og planlagte kontraktændringer står i [arkitek
 
 ## Status og begrænsninger
 
-Den første spilbare udgave har ni kategorier, niveauer som ordpuljen tillader, enkeltbaner og endeløse kampagner, separat login, administration af nye konti, ordmarkering, hints, lokal lagring, synkronisering og 40 achievements. Ekspert er endnu ikke tilgængelig med de indbyggede ordpuljer.
+Den første spilbare udgave har ni kategorier, alle fire niveauer (Let, Normal, Svær og Ekspert), enkeltbaner og endeløse kampagner, separat login, administration af nye konti, ordmarkering, hints, lokal lagring, synkronisering og 40 achievements.
 
-**Børneprofilen er ikke færdigvalideret.** Den bruger foreløbig de indbyggede temalister og en begrænset kontrol af skjulte udtryk i hele gitteret. Ord og sikkerhedspolitik kræver redaktionel gennemgang, før indholdet kan præsenteres som børnesikkert. Planlagt automatisk backup og fysisk test på iPhone, iPad og Android er heller ikke færdigverificeret.
+**Børneprofilen** bruger kun ord, der er godkendt til børn efter [børnepolitikken](docs/ordindhold.md#børnepolitik-version-3). Hele gitteret tjekkes desuden for forbudte sekvenser. Politikken og listerne er lavet af AI på ejerens vegne og er ikke gennemgået af en uafhængig redaktør. Ingen kontrol fanger enhver stødende tolkning. Planlagt automatisk backup og fysisk test på iPhone, iPad og Android er heller ikke færdigverificeret.
 
 ## Start med Docker
 
@@ -101,6 +101,6 @@ Ved opdatering: tag backup, kør `docker compose up -d --build`, og behold volum
 
 ## Ordgrundlag
 
-Det bundtede grundregister er [COR 1.5.1.0](https://ordregister.dk/) fra Dansk Sprognævn. Kilde-TSV: `https://ordregister.dk/files/cor1.5.1.0.tsv`, SHA-256 `1c4d1c06bd676e66be8e8c0af68615c8a892472a05af3b261ba8a9d1f2d2b82b`. Dansk Sprognævn beskriver COR som [frit tilgængeligt og anvendeligt til alle formål](https://www.dsn.dk/forskning/sprogteknologi-og-fagsprog/cor/). Registeret importeres ved første start. Ord herfra bruges først som målord, når de er godkendt og knyttet til en kategori; indtil da bruges de indbyggede temalister.
+Det bundtede grundregister er [COR 1.5.1.0](https://ordregister.dk/) fra Dansk Sprognævn. Kilde-TSV: `https://ordregister.dk/files/cor1.5.1.0.tsv`, SHA-256 `1c4d1c06bd676e66be8e8c0af68615c8a892472a05af3b261ba8a9d1f2d2b82b`. Dansk Sprognævn beskriver COR som [frit tilgængeligt og anvendeligt til alle formål](https://www.dsn.dk/forskning/sprogteknologi-og-fagsprog/cor/). Registeret importeres ved første start i én transaktion, og importen registrerer en årsag til hvert udelukket ord. Rapporten kan ses med `npm run import:words`. Kun ord på de redaktionelle kategorilister bliver målord. Listerne har 858 ordformer, og hver har en COR-kilde.
 
-“Alle danske ord” betyder bred, udvidelig og dokumenteret kildedækning, ikke en fuldstændig liste over alle mulige sammensætninger. Kategorisering af hele COR-registeret og en godkendt børneordliste er planlagt, men endnu ikke leveret.
+“Alle danske ord” betyder bred, udvidelig og dokumenteret kildedækning, ikke en fuldstændig liste over alle mulige sammensætninger. Kategorier, børnepolitik, forbudte sekvenser og den redaktionelle procedure er beskrevet i [docs/ordindhold.md](docs/ordindhold.md). Dækningen pr. kategori, niveau og profiltype står i [docs/ordrapport.md](docs/ordrapport.md) (`npm run report:words`).

@@ -71,7 +71,8 @@
   const QUOTA_MESSAGE = "Der er ikke plads på enheden til at gemme mere. Frigør plads, eller synkronisér og gennemfør hentede baner.";
   let shownGameId: string | null = null;
 
-  $: available = category === "surprise" ? campaignLevels() : availableLevels(category);
+  $: childProfile = identity?.child ?? false;
+  $: available = category === "surprise" ? campaignLevels(childProfile) : availableLevels(category, childProfile);
   $: if (!available.includes(level)) level = available[0] ?? "let";
   $: previewStart = dragStart ?? rejectedStart;
   $: previewEnd = dragStart ? dragEnd : rejectedEnd;
@@ -295,7 +296,7 @@
 
   async function startGame(requestedCategory: CategoryId | "surprise" = category, chosenLevel: LevelId = level) {
     if (!identity || !online) { message = "Opret nye baner, når der er forbindelse til serveren."; return; }
-    const chosenCategory = requestedCategory === "surprise" ? surpriseCategory(chosenLevel) : requestedCategory;
+    const chosenCategory = requestedCategory === "surprise" ? surpriseCategory(chosenLevel, Math.random, childProfile) : requestedCategory;
     if (!chosenCategory) { message = "Ingen kategori kan danne en bane på dette niveau endnu."; return; }
     busy = true; message = "";
     try {
@@ -834,10 +835,10 @@
     {#if !active}
       {#if $updateReady}<div class="update-banner" role="status"><span>En ny version af Find ord er klar.</span><button class="secondary" onclick={() => void applyUpdate()} disabled={markingWord}>Opdatér</button></div>{/if}
       <div class="welcome"><div><div class="eyebrow">{identity.avatar && identity.avatar in AVATARS ? `${AVATARS[identity.avatar as keyof typeof AVATARS]} ` : ""}HEJ {identity.name.toLocaleUpperCase("da-DK")}</div><h1>Find ord.</h1></div><div class="status-pill">{pending ? `${pending} afventer synkronisering` : online ? "Alt er synkroniseret" : "Gemt på enheden"}</div></div>
-      {#if identity.child}<p class="child-notice">Børneordlisten og kontrollen af skjulte ord er stadig under gennemgang. Spil sammen med en voksen i denne første udgave. Hentede baner kan fortsættes offline; ændringer i sikkerhedskontrollen tjekkes ved næste forbindelse.</p>{/if}
+      {#if identity.child}<p class="child-notice">Børnebaner bruger kun ord, der er godkendt til børn, og gitteret tjekkes for uønskede ord. Ingen kontrol fanger alt, så sig til en voksen, hvis du ser noget mærkeligt.</p>{/if}
       <section class="card launch-card">
         <h2>Endeløs kampagne</h2><p>Vælg en fast sværhedsgrad. Hver bane får en ny kategori, og de næste baner hentes til offlinebrug.</p>
-        <div class="launch-fields"><label class="launch-label">Sværhedsgrad<select bind:value={campaignLevel} aria-describedby="campaign-directions">{#each campaignLevels() as id (id)}<option value={id}>{LEVELS[id].name} · {LEVELS[id].size} × {LEVELS[id].size}</option>{/each}</select></label></div>
+        <div class="launch-fields"><label class="launch-label">Sværhedsgrad<select bind:value={campaignLevel} aria-describedby="campaign-directions">{#each campaignLevels(childProfile) as id (id)}<option value={id}>{LEVELS[id].name} · {LEVELS[id].size} × {LEVELS[id].size}</option>{/each}</select></label></div>
         <p class="level-directions" id="campaign-directions" aria-live="polite">Ordretninger: {directionDescription(campaignLevel)}.</p>
         <button class="primary start-button" onclick={startCampaignFlow} disabled={busy || !online}>{busy ? "Henter baner…" : campaigns.some((item) => item.level === campaignLevel) ? "Fortsæt kampagne →" : "Start kampagne →"}</button>
         {#if campaigns.length}
@@ -937,7 +938,7 @@
         <div class="game-title"><div class="eyebrow">{active.campaignId ? `KAMPAGNE · BANE ${active.campaignPosition} · ` : ""}{LEVELS[active.puzzle.level].name.toLocaleUpperCase("da-DK")} · {active.puzzle.grid.length} × {active.puzzle.grid.length}</div><h1>{CATEGORIES[active.puzzle.category].name}</h1></div>
         <p class="game-status">{active.found.length} af {active.puzzle.words.length} ord · {pending ? `${pending} træk afventer synkronisering` : online ? "Synkroniseret" : "Gemt på enheden"}</p>
         <p class="game-directions">Ordretninger: {directionDescription(active.puzzle.level)}.</p>
-        {#if identity.child}<details class="game-child-notice"><summary>Børneindhold under gennemgang</summary><p>Børneordlisten og kontrollen af skjulte ord er stadig under gennemgang. Spil sammen med en voksen i denne første udgave. Hentede baner kan fortsættes offline; ændringer i sikkerhedskontrollen tjekkes ved næste forbindelse.</p></details>{/if}
+        {#if identity.child}<details class="game-child-notice"><summary>Om børneord</summary><p>Børnebaner bruger kun ord, der er godkendt til børn, og gitteret tjekkes for uønskede ord. Ingen kontrol fanger alt, så sig til en voksen, hvis du ser noget mærkeligt. Ændringer i kontrollen tjekkes ved næste forbindelse.</p></details>{/if}
       </section>
       <div class="game-layout" class:completed-layout={active.completed}>
         <section class="card grid-card"><div class="grid-header"><span>{active.abandoned ? "BANE OPGIVET" : active.completed ? "BANE GENNEMFØRT" : "FIND ORDENE"}</span><span>{active.found.length} / {active.puzzle.words.length}</span><a class="word-jump" href="#word-list">Se ordlisten ↓</a></div>

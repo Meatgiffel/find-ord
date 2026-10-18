@@ -1,4 +1,4 @@
-import { CATEGORIES, CATEGORY_TAG_VERSION, DIRECTIONS, LEVELS, WORD_LIST_VERSION, availableLevels, normalizedWord, type CategoryId, type LevelId } from "./words.js";
+import { CATEGORIES, CATEGORY_TAG_VERSION, DIRECTIONS, LEVELS, WORD_LIST_VERSION, availableLevels, categoryWords, type CategoryId, type LevelId } from "./words.js";
 import { blockedFragment, CHILD_POLICY_VERSION } from "./safety.js";
 import { VALIDATION_VERSION, validatePuzzle } from "./validation.js";
 
@@ -52,11 +52,11 @@ function shuffle<T>(items: T[], next: () => number): T[] {
 const LETTERS = "AAAAAAAEEEEEEEEEIIIIINNNNNNRRRRRRSSSSSTTTTTDDDDLLLKKKMMMOOOØØÆÅBBBFFGGHHJPUVY";
 
 export function makePuzzle(id: string, category: CategoryId, level: LevelId, seed: number, child = false): Puzzle {
-  if (!(category in CATEGORIES) || !availableLevels(category).includes(level)) throw new Error("Kategorien har ikke nok ord til niveauet.");
+  if (!(category in CATEGORIES) || !availableLevels(category, child).includes(level)) throw new Error("Kategorien har ikke nok ord til niveauet.");
   const setting = LEVELS[level];
   const next = random(seed);
   for (let layoutAttempt = 0; layoutAttempt < 30; layoutAttempt++) {
-    const candidates = shuffle([...new Set(CATEGORIES[category].words.map(normalizedWord))]
+    const candidates = shuffle(categoryWords(category, child)
       .filter((word) => word.length >= setting.min && word.length <= setting.max), next);
     const grid = Array.from({ length: setting.size }, () => Array<string>(setting.size).fill(""));
     const chosen: string[] = [];

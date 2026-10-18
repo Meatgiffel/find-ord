@@ -60,7 +60,7 @@ export function refillCampaign(db: Database.Database, campaignId: string, userId
     }
     let position = rows.at(-1)?.position ?? 0;
     let previous = rows.at(-1)?.category;
-    const eligible = (Object.keys(CATEGORIES) as CategoryId[]).filter((category) => availableLevels(category).includes(campaign.level));
+    const eligible = (Object.keys(CATEGORIES) as CategoryId[]).filter((category) => availableLevels(category, child).includes(campaign.level));
     if (!eligible.length) throw new Error("Ingen kategorier er tilgængelige på dette niveau.");
     while (waiting < QUEUE_SIZE) {
       const candidates = eligible.filter((category) => eligible.length === 1 || category !== previous);

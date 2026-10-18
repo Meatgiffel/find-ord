@@ -1,6 +1,6 @@
 import type { Puzzle } from "./game.js";
 import { blockedFragment, CHILD_POLICY_VERSION } from "./safety.js";
-import { CATEGORIES, CATEGORY_TAG_VERSION, DIRECTIONS, LEVELS, WORD_LIST_VERSION, normalizedWord, type CategoryId, type LevelId } from "./words.js";
+import { CATEGORIES, CATEGORY_TAG_VERSION, DIRECTIONS, LEVELS, WORD_LIST_VERSION, categoryWords, type CategoryId, type LevelId } from "./words.js";
 
 export const VALIDATION_VERSION = 1;
 const LETTER = /^[A-ZÆØÅ]$/;
@@ -19,18 +19,24 @@ function containsWord(grid: string[][], word: string, directions: number): boole
   return false;
 }
 
+function knownVersion(version: unknown, current: number): boolean {
+  return Number.isInteger(version) && (version as number) >= 1 && (version as number) <= current;
+}
+
 export function validatePuzzle(puzzle: Puzzle): string | null {
   if (!puzzle || !Object.hasOwn(CATEGORIES, puzzle.category) || !Object.hasOwn(LEVELS, puzzle.level)) return "Ukendt kategori eller niveau.";
   if (typeof puzzle.child !== "boolean") return "Banens profil er ugyldig.";
+  // Older word list and tag versions stay playable while every target word still
+  // belongs to the active category list, which is checked below.
   if (puzzle.version !== 1 || puzzle.validationVersion !== VALIDATION_VERSION ||
-    puzzle.wordListVersion !== WORD_LIST_VERSION || puzzle.categoryTagVersion !== CATEGORY_TAG_VERSION) return "Banens version er udgået.";
+    !knownVersion(puzzle.wordListVersion, WORD_LIST_VERSION) || !knownVersion(puzzle.categoryTagVersion, CATEGORY_TAG_VERSION)) return "Banens version er udgået.";
   const setting = LEVELS[puzzle.level as LevelId];
   if (!Array.isArray(puzzle.grid) || puzzle.grid.length !== setting.size ||
     puzzle.grid.some((row) => !Array.isArray(row) || row.length !== setting.size || row.some((cell) => typeof cell !== "string" || !LETTER.test(cell)))) return "Gitteret er ugyldigt.";
   if (!Array.isArray(puzzle.words) || puzzle.words.length !== setting.words || new Set(puzzle.words).size !== setting.words) return "Mållisten er ugyldig.";
-  const categoryWords = new Set(CATEGORIES[puzzle.category as CategoryId].words.map(normalizedWord));
+  const allowed = new Set(categoryWords(puzzle.category as CategoryId, puzzle.child));
   for (const word of puzzle.words) {
-    if (typeof word !== "string" || !categoryWords.has(word) || word.length < setting.min || word.length > setting.max) return "Et målord hører ikke til kategorien.";
+    if (typeof word !== "string" || !allowed.has(word) || word.length < setting.min || word.length > setting.max) return "Et målord hører ikke til kategorien.";
     if (!containsWord(puzzle.grid, word, setting.directions)) return "Et målord mangler i gitteret.";
   }
   if (puzzle.child) {

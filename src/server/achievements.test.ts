@@ -4,7 +4,7 @@ import { achievementsForUser, statsForUser } from "./achievements.js";
 import { applyGameEvents, type GameRow } from "./game-sync.js";
 import { migrateGameData } from "./migrations.js";
 import { findWord, makePuzzle, type Move, type Puzzle } from "../shared/game.js";
-import type { CategoryId, LevelId } from "../shared/words.js";
+import { CATEGORY_TAG_VERSION, type CategoryId, type LevelId } from "../shared/words.js";
 
 let db: Database.Database;
 let serial = 0;
@@ -77,7 +77,7 @@ describe("achievement-motor", () => {
     const stats = statsForUser(db, "alice");
     expect(stats.byCategory).toEqual([{ category: "dyr", completed: 0, found: 1 }, { category: "mad", completed: 0, found: 1 }]);
     expect(achievementsForUser(db, "alice").find((item) => item.id === "category-words-100")!.current).toBe(1);
-    expect(stats.categoryTagVersion).toBe(1);
+    expect(stats.categoryTagVersion).toBe(CATEGORY_TAG_VERSION);
     expect(statsForUser(db, "bob").byCategory).toEqual([]);
   });
 

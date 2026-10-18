@@ -1,4 +1,6 @@
-import { importBundledCor } from "../src/server/lexicon.js";
+import { db } from "../src/server/database.js";
+import { formatImportReport, importBundledCor } from "../src/server/lexicon.js";
 
-const result = await importBundledCor();
-console.log(`COR 1.5.1.0: ${result.imported} spilbare ordformer i lokal database${result.alreadyPresent ? " (allerede indlæst)" : ""}.`);
+const result = await importBundledCor(db);
+console.log(formatImportReport(result));
+if (result.alreadyPresent) console.log("Versionen var allerede indlæst; rapporten er fra den første import.");
