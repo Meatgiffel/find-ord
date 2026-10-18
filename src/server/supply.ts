@@ -15,7 +15,7 @@ export class SupplyBusyError extends Error {
 
 // Runs one generation at a time in a worker thread, so login and word marking are not
 // blocked. A job that runs past the time limit stops the worker; the next job starts a new one.
-export function workerGenerator(timeoutMs = 5000): Generator {
+export function workerGenerator(timeoutMs = 3000): Generator {
   let worker: Worker | null = null;
   let jobs = 0;
   const pending = new Map<number, { resolve: (puzzle: Puzzle) => void; reject: (error: Error) => void }>();

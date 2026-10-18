@@ -20,7 +20,7 @@ Hver respons har headeren `X-Request-Id`. En proxy kan sende sin egen (højst 64
 
 | Variabel | Standard | Virkning |
 |---|---|---|
-| `GENERATION_TIMEOUT_MS` | 5000 | Hårdt tidsbudget pr. bane. Derefter stoppes workeren, og der prøves op til to gange mere (højst cirka 15 s i alt). Kontrolleret fejl: `503` med `Retry-After`. |
+| `GENERATION_TIMEOUT_MS` | 3000 | Tidsbudget pr. forsøg. Derefter stoppes workeren, og der prøves op til to gange mere, så det hårde budget er højst 9 s i alt. Kontrolleret fejl: `503` med `Retry-After`. Hold værdien på højst 3333 ms, så det samlede budget bliver under 10 s. |
 | `GENERATION_QUEUE_LIMIT` | 8 | Antal job i køen. Ved fuld kø svarer serveren `503` med `Retry-After: 5`. |
 | `PUZZLE_CACHE_LIMIT` | 300 | Højeste antal færdige baner i cachen. De ældste fjernes først. |
 | `GAME_CREATION_LIMIT` | 60 | Nye baner og kampagnepåfyldninger pr. konto pr. 10 minutter. |

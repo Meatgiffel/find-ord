@@ -35,7 +35,7 @@ try {
 const versions = { words: WORD_LIST_VERSION, categories: CATEGORY_TAG_VERSION, childPolicy: CHILD_POLICY_VERSION, validation: VALIDATION_VERSION, cor: COR_VERSION, schema: LATEST_MIGRATION };
 log("info", "startup", { versions, corForms: corpus.imported });
 // Puzzles are generated in a worker thread and a few are kept ready per combination.
-const supply = new PuzzleSupply(db, workerGenerator(Number(process.env.GENERATION_TIMEOUT_MS || 5000)), {
+const supply = new PuzzleSupply(db, workerGenerator(Number(process.env.GENERATION_TIMEOUT_MS || 3000)), {
   queueLimit: Number(process.env.GENERATION_QUEUE_LIMIT || 8), maxCached: Number(process.env.PUZZLE_CACHE_LIMIT || 300)
 });
 const pruned = supply.prune();
