@@ -2,7 +2,7 @@
   import { onMount, tick } from "svelte";
   import { authClient } from "./auth.js";
   import { local, recordMove, saveGame, saveCampaign, eraseLocal, offlineSignOut, pendingServerLogout, clearPendingServerLogout, approveDownloadedGame, reconcileDownloadedGames, removeDownloadedGame, retireDownloadedGame, usableOffline, pruneOfflineGames, saveMissingGames, requestPersistentStorage, isQuotaError, MAX_OFFLINE_GAMES, type DownloadedCampaign, type PuzzleVersions, type StoredCampaign, type StoredGame, type StoredIdentity } from "./storage.js";
-  import { CATEGORIES, LEVELS, availableLevels, campaignLevels, directionDescription, type CategoryId, type LevelId } from "../shared/words.js";
+  import { CATEGORIES, LEVELS, availableLevels, campaignLevels, directionDescription, surpriseCategory, type CategoryId, type LevelId } from "../shared/words.js";
   import { cellsBetween, findWord, HINT_LIMIT, hintsRemaining, visibleHint, wordAt, type Move, type Point, type Puzzle } from "../shared/game.js";
   import { snapDragEnd } from "./drag.js";
   import { applyUpdate, updateReady } from "./pwa.js";
@@ -21,7 +21,7 @@
   let selectionFeedback = "";
   let username = "";
   let password = "";
-  let category: CategoryId = "dyr";
+  let category: CategoryId | "surprise" = "dyr";
   let level: LevelId = "let";
   let games: StoredGame[] = [];
   let campaigns: StoredCampaign[] = [];
@@ -62,7 +62,7 @@
   const QUOTA_MESSAGE = "Der er ikke plads på enheden til at gemme mere. Frigør plads, eller synkronisér og gennemfør hentede baner.";
   let shownGameId: string | null = null;
 
-  $: available = availableLevels(category);
+  $: available = category === "surprise" ? campaignLevels() : availableLevels(category);
   $: if (!available.includes(level)) level = available[0] ?? "let";
   $: previewStart = dragStart ?? rejectedStart;
   $: previewEnd = dragStart ? dragEnd : rejectedEnd;
@@ -264,8 +264,10 @@
     message = "Log ind igen for at synkronisere dine gemte spil.";
   }
 
-  async function startGame(chosenCategory: CategoryId = category, chosenLevel: LevelId = level) {
+  async function startGame(requestedCategory: CategoryId | "surprise" = category, chosenLevel: LevelId = level) {
     if (!identity || !online) { message = "Opret nye baner, når der er forbindelse til serveren."; return; }
+    const chosenCategory = requestedCategory === "surprise" ? surpriseCategory(chosenLevel) : requestedCategory;
+    if (!chosenCategory) { message = "Ingen kategori kan danne en bane på dette niveau endnu."; return; }
     busy = true; message = "";
     try {
       if (!await refreshConnectedAccount() || !identity) return;
@@ -737,7 +739,7 @@
       </section>
       <section class="card launch-card">
         <h2>En enkelt bane</h2><p>Vælg selv kategori og sværhedsgrad.</p>
-        <div class="launch-fields"><label class="launch-label">Kategori<select bind:value={category}>{#each Object.entries(CATEGORIES) as [id, item] (id)}<option value={id}>{item.name}</option>{/each}</select></label><label class="launch-label">Sværhedsgrad<select bind:value={level} aria-describedby="single-directions">{#each available as id (id)}<option value={id}>{LEVELS[id].name} · {LEVELS[id].size} × {LEVELS[id].size}</option>{/each}</select></label></div>
+        <div class="launch-fields"><label class="launch-label">Kategori<select bind:value={category}><option value="surprise">Overrask mig</option>{#each Object.entries(CATEGORIES) as [id, item] (id)}<option value={id}>{item.name}</option>{/each}</select></label><label class="launch-label">Sværhedsgrad<select bind:value={level} aria-describedby="single-directions">{#each available as id (id)}<option value={id}>{LEVELS[id].name} · {LEVELS[id].size} × {LEVELS[id].size}</option>{/each}</select></label></div>
         <p class="level-directions" id="single-directions" aria-live="polite">Ordretninger: {directionDescription(level)}.</p>
         <button class="primary start-button" onclick={() => startGame()} disabled={busy || !online}>{busy ? "Danner bane…" : "Start bane →"}</button>
         {#if !online}<p class="muted">Nye baner kræver forbindelse. Hentede baner kan spilles offline.</p>{/if}

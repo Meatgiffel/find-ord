@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CATEGORIES, DIRECTIONS, LEVELS, availableLevels, type CategoryId } from "./words.js";
+import { CATEGORIES, DIRECTIONS, LEVELS, availableLevels, surpriseCategory, type CategoryId } from "./words.js";
 import { cellsBetween, findWord, makePuzzle, visibleHint, wordAt } from "./game.js";
 import { blockedFragment, currentChildPuzzle } from "./safety.js";
 
@@ -24,6 +24,16 @@ describe("banegenerator", () => {
       }
     }
   }, 30000);
+
+  it("vælger kun en kategori, der kan danne det valgte niveau, ved 'Overrask mig'", () => {
+    for (const level of ["let", "normal", "svaer"] as const) {
+      for (const draw of [0, 0.5, 0.999]) {
+        const category = surpriseCategory(level, () => draw);
+        expect(category && availableLevels(category).includes(level)).toBe(true);
+      }
+    }
+    expect(surpriseCategory("ekspert")).toBeNull();
+  });
 
   it("afviser markeringer med knæk og uden for gitteret", () => {
     const puzzle = makePuzzle("test", "dyr", "let", 1234);

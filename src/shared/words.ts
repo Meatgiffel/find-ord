@@ -77,6 +77,12 @@ export function availableLevels(category: CategoryId): LevelId[] {
   });
 }
 
+// "Overrask mig": one category that can generate the chosen level.
+export function surpriseCategory(level: LevelId, random: () => number = Math.random): CategoryId | null {
+  const eligible = (Object.keys(CATEGORIES) as CategoryId[]).filter((category) => availableLevels(category).includes(level));
+  return eligible.length ? eligible[Math.floor(random() * eligible.length)] : null;
+}
+
 export function campaignLevels(): LevelId[] {
   return (Object.keys(LEVELS) as LevelId[]).filter((level) =>
     (Object.keys(CATEGORIES) as CategoryId[]).some((category) => availableLevels(category).includes(level)));
