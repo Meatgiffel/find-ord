@@ -23,7 +23,15 @@ docker compose up -d --build
 docker compose exec find-ord npm run bootstrap
 ```
 
-Åbn adressen i `BASE_URL`. Bootstrap beder interaktivt om brugernavn, visningsnavn og adgangskode til den første administrator; der findes ingen standardkonto. Administratoren kan derefter oprette separate voksen- og børnekonti i appen, skifte en konto mellem børne- og voksenprofil (kræver administratorens adgangskode og logger kontoen ud) samt deaktivere og genaktivere konti. Hver spiller kan selv ændre visningsnavn, avatar og adgangskode under “Min konto”. Bootstrap kan kun bruges, når databasen er tom.
+Åbn adressen i `BASE_URL`. Bootstrap beder interaktivt om brugernavn, visningsnavn og adgangskode til den første administrator; der findes ingen standardkonto. Administratoren kan derefter oprette separate voksen- og børnekonti i appen, skifte en konto mellem børne- og voksenprofil (kræver administratorens adgangskode og logger kontoen ud) samt deaktivere og genaktivere konti. Hver spiller kan selv ændre visningsnavn, avatar og adgangskode under “Min konto”. Administratoren kan nulstille en spillers adgangskode og slette konti; begge dele logger kontoen ud, og sletning fjerner kontoens spil, statistik og achievements, men ikke andres data. Den sidste administrator kan ikke slettes eller degraderes.
+
+Har ingen længere administratoradgang, kan ejeren af Docker-værten gendanne den for en eksisterende voksenkonto:
+
+```sh
+docker compose exec find-ord npm run reset-admin
+```
+
+Kommandoen spørger interaktivt om brugernavn og ny adgangskode, giver kontoen administratorrolle og logger den ud alle steder. Bootstrap kan kun bruges, når databasen er tom.
 
 Valgfrit kan `LOG_LEVEL=error` begrænse loggen til fejl, og `GAME_CREATION_LIMIT` (standard 60) styrer, hvor mange nye baner og kampagnepåfyldninger én konto kan hente pr. 10 minutter. Containeren lukker SQLite pænt ned ved `docker compose stop`. Imaget er afprøvet på linux/amd64; linux/arm64 er endnu ikke verificeret.
 
@@ -89,7 +97,7 @@ docker compose start find-ord
 
 Containeren kører som uid 1000; backupfilerne skal kunne læses af den bruger. Lokalt uden Docker hedder kommandoerne `npm run backup -- <mappe>` og `npm run restore -- <backupmappe> [--replace]` og bruger `DATA_FILE`.
 
-Ved opdatering: tag backup, kør `docker compose up -d --build`, og behold volumet. Migrationer kører ved start i transaktioner; fejler en, beholdes de eksisterende data, og servicen starter ikke. Rul tilbage ved at bygge den tidligere udgave (`git checkout <tidligere commit>`) og gendanne backuppen fra før opdateringen. En backup fra en nyere udgave afvises af en ældre. Hold databasen på lokal disk i Docker-volumet, ikke på et delt netværksfilsystem; SQLite i WAL-tilstand understøtter det ikke.
+Ved opdatering: tag backup, kør `docker compose up -d --build`, og behold volumet. Migrationer kører ved start i transaktioner; fejler en, beholdes de eksisterende data, og servicen starter ikke. Rul tilbage ved at bygge den tidligere udgave (`git checkout <tidligere commit>`) og gendanne backuppen fra før opdateringen. En backup fra en nyere udgave afvises af en ældre. Ældre backups indeholder data for konti, der senere er slettet; slet eller udskift dem efter din egen opbevaringsperiode, hvis de data ikke skal kunne gendannes. Hold databasen på lokal disk i Docker-volumet, ikke på et delt netværksfilsystem; SQLite i WAL-tilstand understøtter det ikke.
 
 ## Ordgrundlag
 

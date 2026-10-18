@@ -37,6 +37,13 @@ export const guardAccountChanges = createAuthMiddleware(async (ctx) => {
   }
 });
 
+// A password set by an administrator signs the account out everywhere.
+export const revokeAfterPasswordReset = createAuthMiddleware(async (ctx) => {
+  if (ctx.path !== "/admin/set-user-password" || ctx.context.returned instanceof Error) return;
+  const userId = (ctx.body as { userId?: string } | undefined)?.userId;
+  if (userId) await ctx.context.internalAdapter.deleteUserSessions(userId);
+});
+
 function createAuth(url: string) { return betterAuth({
   database: db,
   baseURL: url,
@@ -44,7 +51,7 @@ function createAuth(url: string) { return betterAuth({
   trustedOrigins,
   emailAndPassword: { enabled: true, disableSignUp: false },
   plugins: [username(), admin()],
-  hooks: { before: guardAccountChanges },
+  hooks: { before: guardAccountChanges, after: revokeAfterPasswordReset },
   advanced: { useSecureCookies: url.startsWith("https:"), database: { validateSchema: false } }
 }); }
 

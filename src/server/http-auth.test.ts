@@ -166,6 +166,26 @@ describe("HTTP-adgangskontrol", () => {
       expect(await (await fetch(`${baseURL}/api/me`, { headers: { Cookie: alice } })).json()).toMatchObject({ name: "Alice A.", avatar: "ugle" });
       expect((await profile({ name: "Alice", avatar: "../../billede.png" })).status).toBe(400);
 
+      // Admin password reset signs the account out; deletion removes all of its data.
+      expect((await adminCall("set-user-password", { userId: ids.alice, newPassword: "nyt-password-456" })).status).toBe(200);
+      expect((await fetch(`${baseURL}/api/me`, { headers: { Cookie: alice } })).status).toBe(401);
+      const relogin = await fetch(`${baseURL}/api/auth/sign-in/username`, {
+        method: "POST", headers: { Origin: baseURL, "Content-Type": "application/json" }, body: JSON.stringify({ username: "alice", password: "nyt-password-456" })
+      });
+      expect(relogin.status).toBe(200);
+      const kidAgain = await login("kid");
+      expect((await fetch(`${baseURL}/api/games`, {
+        method: "POST", headers: { Origin: baseURL, Cookie: kidAgain, "Content-Type": "application/json" }, body: JSON.stringify({ category: "dyr", level: "let" })
+      })).status).toBe(201);
+      expect((await adminCall("remove-user", { userId: ids.kid })).status).toBe(200);
+      const check = new Database(join(directory, "test.sqlite"), { readonly: true });
+      const rowsFor = (table: string, column: string, id: string) => (check.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE ${column} = ?`).get(id) as { count: number }).count;
+      for (const [table, column] of [["user", "id"], ["session", "userId"], ["account", "userId"], ["profile", "user_id"], ["game", "user_id"], ["game_event", "user_id"], ["achievement_award", "user_id"]]) {
+        expect(rowsFor(table, column, ids.kid)).toBe(0);
+      }
+      expect(rowsFor("game", "user_id", ids.alice)).toBeGreaterThan(0);
+      check.close();
+
       const duplicate = await fetch(`${baseURL}/api/accounts`, {
         method: "POST", headers: { Origin: baseURL, Cookie: root, "Content-Type": "application/json" },
         body: JSON.stringify({ username: "Bob", name: "Bob", password: "test-password-123", child: false })

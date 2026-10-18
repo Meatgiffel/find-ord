@@ -718,6 +718,34 @@
     await loadAccounts();
   }
 
+  async function adminAuth(path: string, body: object, failure: string) {
+    const response = await fetch(`/api/auth/admin/${path}`, {
+      method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+    });
+    if (!response.ok) throw new Error((await response.json().catch(() => null))?.message ?? failure);
+  }
+
+  async function resetPassword(account: (typeof accounts)[number]) {
+    const next = prompt(`Ny midlertidig adgangskode til ${account.name} (mindst 8 tegn). Kontoen logges ud på alle enheder.`);
+    if (next === null) return;
+    if (next.length < 8) { message = "Adgangskoden skal have mindst 8 tegn."; return; }
+    try {
+      await adminAuth("set-user-password", { userId: account.id, newPassword: next }, "Adgangskoden kunne ikke nulstilles.");
+      message = `Adgangskoden til ${account.name} er nulstillet. Giv den videre, og bed om at ændre den under Min konto.`;
+    } catch (cause) { message = cause instanceof Error ? cause.message : "Adgangskoden kunne ikke nulstilles."; }
+  }
+
+  async function deleteAccount(account: (typeof accounts)[number]) {
+    const typed = prompt(`Slet ${account.name} permanent? Spil, statistik og achievements slettes og kan ikke gendannes fra appen. Skriv brugernavnet ${account.username} for at bekræfte.`);
+    if (typed === null) return;
+    if (typed.trim().toLowerCase() !== account.username.toLowerCase()) { message = "Brugernavnet passede ikke. Kontoen er ikke slettet."; return; }
+    try {
+      await adminAuth("remove-user", { userId: account.id }, "Kontoen kunne ikke slettes.");
+      message = `${account.name} er slettet.`;
+    } catch (cause) { message = cause instanceof Error ? cause.message : "Kontoen kunne ikke slettes."; }
+    await loadAccounts();
+  }
+
   async function setBanned(account: (typeof accounts)[number], banned: boolean) {
     try {
       const response = await fetch(`/api/auth/admin/${banned ? "ban-user" : "unban-user"}`, {
@@ -859,6 +887,8 @@
               {#if account.id !== identity.id}<span class="account-actions">
                 {#if account.role !== "admin"}<button class="text-button" onclick={() => setChildProfile(account, !account.child)}>{account.child ? "Gør til voksen" : "Gør til barn"}</button>{/if}
                 <button class="text-button" onclick={() => setBanned(account, !account.banned)}>{account.banned ? "Genaktivér" : "Deaktivér"}</button>
+                <button class="text-button" onclick={() => resetPassword(account)}>Nulstil adgangskode</button>
+                <button class="text-button danger" onclick={() => deleteAccount(account)}>Slet konto</button>
               </span>{/if}
             </div>{/each}</div>
             <form class="account-form" onsubmit={(event) => { event.preventDefault(); void createAccount(); }}>
