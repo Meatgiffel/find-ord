@@ -2,7 +2,7 @@
   import { onMount, tick } from "svelte";
   import { authClient } from "./auth.js";
   import { local, recordMove, saveGame, saveCampaign, eraseLocal, offlineSignOut, pendingServerLogout, clearPendingServerLogout, approveDownloadedGame, reconcileDownloadedGames, removeDownloadedGame, retireDownloadedGame, usableOffline, pruneOfflineGames, saveMissingGames, requestPersistentStorage, isQuotaError, MAX_OFFLINE_GAMES, type DownloadedCampaign, type PlayerStats, type PuzzleVersions, type StoredCampaign, type StoredGame, type StoredIdentity } from "./storage.js";
-  import { CATEGORIES, LEVELS, availableLevels, campaignLevels, directionDescription, surpriseCategory, type CategoryId, type LevelId } from "../shared/words.js";
+  import { AVATARS, AVATAR_NAMES, CATEGORIES, LEVELS, availableLevels, campaignLevels, directionDescription, surpriseCategory, type CategoryId, type LevelId } from "../shared/words.js";
   import { cellsBetween, findWord, HINT_LIMIT, hintsRemaining, visibleHint, wordAt, type Move, type Point, type Puzzle } from "../shared/game.js";
   import { snapDragEnd } from "./drag.js";
   import { applyUpdate, updateReady } from "./pwa.js";
@@ -39,7 +39,11 @@
   let rejectedStart: Point | null = null;
   let rejectedEnd: Point | null = null;
   let rejectionTimer: ReturnType<typeof setTimeout> | null = null;
-  let accounts: Array<{ id: string; name: string; username: string; child: number }> = [];
+  let accounts: Array<{ id: string; name: string; username: string; role: string | null; child: number; banned: number; avatar: string | null; policyVersion: number }> = [];
+  let adminPassword = "";
+  let profileName = "";
+  let profileAvatar: string | null = null;
+  let editingProfile = false;
   let newUser = "";
   let newName = "";
   let newPassword = "";
@@ -688,6 +692,43 @@
     finally { changingPassword = false; }
   }
 
+  function startProfileEdit() {
+    profileName = identity?.name ?? "";
+    profileAvatar = identity?.avatar ?? null;
+    editingProfile = true;
+  }
+
+  async function saveProfile() {
+    if (!identity) return;
+    try {
+      const saved = await api("/profile", { method: "PATCH", body: JSON.stringify({ name: profileName, avatar: profileAvatar }) }) as { name: string; avatar: string | null };
+      identity = { ...identity, ...saved };
+      await local.identity.put({ key: "identity", ...identity });
+      editingProfile = false;
+      message = "Profilen er gemt.";
+    } catch (cause) { message = cause instanceof Error ? cause.message : "Profilen kunne ikke gemmes."; }
+  }
+
+  async function setChildProfile(account: (typeof accounts)[number], child: boolean) {
+    if (!adminPassword) { message = "Skriv din adgangskode for at ændre profiltype."; return; }
+    try {
+      await api(`/accounts/${account.id}/policy`, { method: "PATCH", body: JSON.stringify({ child, adminPassword, expectedVersion: account.policyVersion }) });
+      message = child ? `${account.name} er nu børneprofil og er logget ud på sine enheder.` : `${account.name} er nu voksenprofil og er logget ud på sine enheder.`;
+    } catch (cause) { message = cause instanceof Error ? cause.message : "Profiltypen kunne ikke ændres."; }
+    await loadAccounts();
+  }
+
+  async function setBanned(account: (typeof accounts)[number], banned: boolean) {
+    try {
+      const response = await fetch(`/api/auth/admin/${banned ? "ban-user" : "unban-user"}`, {
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: account.id })
+      });
+      if (!response.ok) throw new Error((await response.json().catch(() => null))?.message ?? "Kontoen kunne ikke ændres.");
+      message = banned ? `${account.name} er deaktiveret og logget ud.` : `${account.name} er aktiv igen.`;
+    } catch (cause) { message = cause instanceof Error ? cause.message : "Kontoen kunne ikke ændres."; }
+    await loadAccounts();
+  }
+
   async function loadAccounts() {
     try { accounts = await api("/accounts"); showAccounts = true; }
     catch (cause) { message = cause instanceof Error ? cause.message : "Kunne ikke hente konti."; }
@@ -730,7 +771,7 @@
   {:else}
     {#if !active}
       {#if $updateReady}<div class="update-banner" role="status"><span>En ny version af Find ord er klar.</span><button class="secondary" onclick={() => void applyUpdate()} disabled={markingWord}>Opdatér</button></div>{/if}
-      <div class="welcome"><div><div class="eyebrow">HEJ {identity.name.toLocaleUpperCase("da-DK")}</div><h1>Find ord.</h1></div><div class="status-pill">{pending ? `${pending} afventer synkronisering` : online ? "Alt er synkroniseret" : "Gemt på enheden"}</div></div>
+      <div class="welcome"><div><div class="eyebrow">{identity.avatar && identity.avatar in AVATARS ? `${AVATARS[identity.avatar as keyof typeof AVATARS]} ` : ""}HEJ {identity.name.toLocaleUpperCase("da-DK")}</div><h1>Find ord.</h1></div><div class="status-pill">{pending ? `${pending} afventer synkronisering` : online ? "Alt er synkroniseret" : "Gemt på enheden"}</div></div>
       {#if identity.child}<p class="child-notice">Børneordlisten og kontrollen af skjulte ord er stadig under gennemgang. Spil sammen med en voksen i denne første udgave. Hentede baner kan fortsættes offline; ændringer i sikkerhedskontrollen tjekkes ved næste forbindelse.</p>{/if}
       <section class="card launch-card">
         <h2>Endeløs kampagne</h2><p>Vælg en fast sværhedsgrad. Hver bane får en ny kategori, og de næste baner hentes til offlinebrug.</p>
@@ -788,9 +829,18 @@
         {:else}<p class="muted">Din statistik vises, når du har forbindelse.</p>{/if}
       </details>
       <details class="card secondary-panel"><summary>Min konto</summary>
-        <p>{identity.name} <small class="muted">@{identity.username}</small></p>
-        <p class="muted">Profiltype: {identity.child ? "Barn" : "Voksen"}{identity.role === "admin" ? " · Administrator" : ""}</p>
+        <p>{identity.avatar && identity.avatar in AVATARS ? AVATARS[identity.avatar as keyof typeof AVATARS] : ""} {identity.name} <small class="muted">@{identity.username}</small></p>
+        <p class="muted">Profiltype: {identity.child ? "Barn" : "Voksen"}{identity.role === "admin" ? " · Administrator" : ""}. Kun en administrator kan ændre profiltypen.</p>
         {#if online && !sessionExpired}
+          {#if editingProfile}
+            <form class="account-form" onsubmit={(event) => { event.preventDefault(); void saveProfile(); }}>
+              <label>Visningsnavn<input bind:value={profileName} maxlength="80" required /></label>
+              <fieldset class="avatar-choice"><legend>Avatar</legend>
+                {#each Object.entries(AVATARS) as [id, symbol] (id)}<label><input type="radio" name="avatar" value={id} bind:group={profileAvatar} /><span aria-hidden="true">{symbol}</span><span class="sr-only">{AVATAR_NAMES[id as keyof typeof AVATARS]}</span></label>{/each}
+              </fieldset>
+              <div class="form-actions"><button class="secondary" type="submit">Gem profil</button><button class="text-button" type="button" onclick={() => editingProfile = false}>Annullér</button></div>
+            </form>
+          {:else}<button class="secondary" onclick={startProfileEdit}>Ret navn og avatar</button>{/if}
           <form class="account-form" onsubmit={(event) => { event.preventDefault(); void changePassword(); }}>
             <label>Nuværende adgangskode<input type="password" autocomplete="current-password" bind:value={currentPassword} required /></label>
             <label>Ny adgangskode<input type="password" autocomplete="new-password" minlength="8" bind:value={nextPassword} required /></label>
@@ -802,7 +852,15 @@
         <details class="card secondary-panel"><summary>Spillere og konti</summary>
           {#if !showAccounts}<button class="secondary" onclick={loadAccounts}>Administrer konti</button>
           {:else}
-            <div class="account-list">{#each accounts as account (account.id)}<div>{account.name} <small>@{account.username} {account.child ? "· Barn" : ""}</small></div>{/each}</div>
+            <p class="muted">Børneprofiler får kun børnebaner. Ændres profiltypen, logges kontoen ud på alle enheder, og baner til den gamle profiltype fjernes ved næste forbindelse.</p>
+            <label class="admin-password">Din adgangskode (kræves for at ændre profiltype)<input type="password" autocomplete="current-password" bind:value={adminPassword} /></label>
+            <div class="account-list">{#each accounts as account (account.id)}<div class="account-row">
+              <span>{account.avatar && account.avatar in AVATARS ? AVATARS[account.avatar as keyof typeof AVATARS] : ""} {account.name} <small>@{account.username} · {account.child ? "Barn" : "Voksen"}{account.role === "admin" ? " · Administrator" : ""}{account.banned ? " · Deaktiveret" : ""}</small></span>
+              {#if account.id !== identity.id}<span class="account-actions">
+                {#if account.role !== "admin"}<button class="text-button" onclick={() => setChildProfile(account, !account.child)}>{account.child ? "Gør til voksen" : "Gør til barn"}</button>{/if}
+                <button class="text-button" onclick={() => setBanned(account, !account.banned)}>{account.banned ? "Genaktivér" : "Deaktivér"}</button>
+              </span>{/if}
+            </div>{/each}</div>
             <form class="account-form" onsubmit={(event) => { event.preventDefault(); void createAccount(); }}>
               <label>Navn<input bind:value={newName} required /></label><label>Brugernavn<input bind:value={newUser} pattern={"[A-Za-z0-9_.-]{3,30}"} required /></label><label>Adgangskode<input type="password" minlength="8" bind:value={newPassword} required /></label><label class="checkbox"><input type="checkbox" bind:checked={newChild} /> Børneprofil (under gennemgang)</label><button class="secondary" type="submit">Opret spiller</button>
             </form>

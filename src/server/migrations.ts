@@ -116,6 +116,16 @@ const migrations: Migration[] = [
         );
       `);
     }
+  },
+  {
+    version: 7,
+    apply(db) {
+      // A built-in avatar per player, and a version that increases with every child-flag change.
+      db.exec(`
+        ALTER TABLE profile ADD COLUMN avatar TEXT;
+        ALTER TABLE profile ADD COLUMN policy_version INTEGER NOT NULL DEFAULT 1;
+      `);
+    }
   }
 ];
 

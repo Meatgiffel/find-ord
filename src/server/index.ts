@@ -11,7 +11,7 @@ import { importBundledCor } from "./lexicon.js";
 import { achievementsForUser, statsForUser } from "./achievements.js";
 import { campaignsForUser, refillCampaign, startCampaign } from "./campaigns.js";
 import { applyGameEvents, loadGameForUser, type GameRow } from "./game-sync.js";
-import { CATEGORIES, CATEGORY_TAG_VERSION, WORD_LIST_VERSION, availableLevels, campaignLevels, type CategoryId, type LevelId } from "../shared/words.js";
+import { AVATARS, CATEGORIES, CATEGORY_TAG_VERSION, WORD_LIST_VERSION, availableLevels, campaignLevels, type CategoryId, type LevelId } from "../shared/words.js";
 import { makePuzzle, type Move, type Puzzle } from "../shared/game.js";
 import { VALIDATION_VERSION, validatePuzzle } from "../shared/validation.js";
 import { CHILD_POLICY_VERSION } from "../shared/safety.js";
@@ -76,7 +76,8 @@ app.use("/api", (req, res, next) => {
 
 app.get("/api/me", async (req, res) => {
   const current = await user(req, res); if (!current) return;
-  res.json({ id: current.id, name: current.name, username: current.username, role: current.role, child: childFor(current.id),
+  const avatar = (db.prepare("SELECT avatar FROM profile WHERE user_id = ?").get(current.id) as { avatar: string | null } | undefined)?.avatar ?? null;
+  res.json({ id: current.id, name: current.name, username: current.username, role: current.role, child: childFor(current.id), avatar,
     puzzleVersions: { rules: 1, validation: VALIDATION_VERSION, words: WORD_LIST_VERSION,
       categories: CATEGORY_TAG_VERSION, childPolicy: CHILD_POLICY_VERSION } });
 });
@@ -186,8 +187,42 @@ const accountSchema = z.object({ username: z.string().regex(/^[a-zA-Z0-9_.-]{3,3
 app.get("/api/accounts", async (req, res) => {
   const current = await user(req, res); if (!current) return;
   if (current.role !== "admin") return error(res, 403, "Kun administrator kan se konti.");
-  const rows = db.prepare("SELECT u.id, u.name, u.username, u.role, COALESCE(p.child, 0) AS child FROM user u LEFT JOIN profile p ON p.user_id = u.id ORDER BY u.name").all();
+  const rows = db.prepare(`SELECT u.id, u.name, u.username, u.role, COALESCE(u.banned, 0) AS banned, COALESCE(p.child, 0) AS child,
+    p.avatar, COALESCE(p.policy_version, 1) AS policyVersion FROM user u LEFT JOIN profile p ON p.user_id = u.id ORDER BY u.name`).all();
   res.json(rows);
+});
+
+const profileSchema = z.object({ name: z.string().trim().min(1).max(80), avatar: z.enum(Object.keys(AVATARS) as [string, ...string[]]).nullable() });
+app.patch("/api/profile", async (req, res) => {
+  const current = await user(req, res); if (!current) return;
+  const parsed = profileSchema.safeParse(req.body);
+  if (!parsed.success) return error(res, 400, "Skriv et navn på 1–80 tegn, og vælg en af de indbyggede avatarer.");
+  await authForHost(req.get("host")).api.updateUser({ body: { name: parsed.data.name }, headers: fromNodeHeaders(req.headers) });
+  db.prepare("UPDATE profile SET avatar = ? WHERE user_id = ?").run(parsed.data.avatar, current.id);
+  res.json({ name: parsed.data.name, avatar: parsed.data.avatar });
+});
+
+// Changing the child flag needs the administrator's password and the version the admin
+// saw, signs the account out everywhere, and makes its downloaded games stale.
+const policySchema = z.object({ child: z.boolean(), adminPassword: z.string().min(1), expectedVersion: z.number().int() });
+app.patch("/api/accounts/:id/policy", async (req, res) => {
+  const current = await user(req, res); if (!current) return;
+  if (current.role !== "admin") return error(res, 403, "Kun administrator kan ændre børneprofiler.");
+  const parsed = policySchema.safeParse(req.body);
+  if (!parsed.success) return error(res, 400, "Angiv profiltype, din adgangskode og kontoens version.");
+  try { await authForHost(req.get("host")).api.verifyPassword({ body: { password: parsed.data.adminPassword }, headers: fromNodeHeaders(req.headers) }); }
+  catch { return error(res, 403, "Din adgangskode er forkert."); }
+  const target = db.prepare("SELECT u.role, p.child, p.policy_version AS version FROM user u JOIN profile p ON p.user_id = u.id WHERE u.id = ?")
+    .get(req.params.id) as { role: string | null; child: number; version: number } | undefined;
+  if (!target) return error(res, 404, "Kontoen blev ikke fundet.");
+  if (parsed.data.child && target.role?.split(",").includes("admin")) return error(res, 400, "En administrator kan ikke være børnekonto.");
+  if (target.version !== parsed.data.expectedVersion) return error(res, 409, "Kontoen er ændret i mellemtiden. Indlæs listen igen.");
+  const version = target.version + 1;
+  db.transaction(() => {
+    db.prepare("UPDATE profile SET child = ?, policy_version = ? WHERE user_id = ?").run(parsed.data.child ? 1 : 0, version, req.params.id);
+    db.prepare("DELETE FROM session WHERE userId = ?").run(req.params.id);
+  })();
+  res.json({ id: req.params.id, child: parsed.data.child, policyVersion: version });
 });
 app.post("/api/accounts", async (req, res) => {
   const current = await user(req, res); if (!current) return;

@@ -141,6 +141,31 @@ describe("HTTP-adgangskontrol", () => {
       expect((await adminCall("remove-user", { userId: ids.root })).status).toBe(403);
       expect((await adminCall("ban-user", { userId: ids.root })).status).toBe(403);
       expect((await adminCall("create-user", { email: "x@users.find-ord.invalid", name: "x", password: "test-password-123" })).status).toBe(403);
+      // Child flag: admin password, expected version, signs the account out.
+      const kid = await login("kid");
+      const policy = (cookie: string, body: object) => fetch(`${baseURL}/api/accounts/${ids.kid}/policy`, {
+        method: "PATCH", headers: { Origin: baseURL, Cookie: cookie, "Content-Type": "application/json" }, body: JSON.stringify(body)
+      });
+      expect((await policy(alice, { child: false, adminPassword: "test-password-123", expectedVersion: 1 })).status).toBe(403);
+      expect((await policy(root, { child: false, adminPassword: "forkert", expectedVersion: 1 })).status).toBe(403);
+      const changed = await policy(root, { child: false, adminPassword: "test-password-123", expectedVersion: 1 });
+      expect(changed.status).toBe(200);
+      expect(await changed.json()).toEqual({ id: ids.kid, child: false, policyVersion: 2 });
+      expect((await policy(root, { child: true, adminPassword: "test-password-123", expectedVersion: 1 })).status).toBe(409);
+      expect((await fetch(`${baseURL}/api/me`, { headers: { Cookie: kid } })).status).toBe(401);
+      expect((await fetch(`${baseURL}/api/accounts/${ids.root}/policy`, {
+        method: "PATCH", headers: { Origin: baseURL, Cookie: root, "Content-Type": "application/json" },
+        body: JSON.stringify({ child: true, adminPassword: "test-password-123", expectedVersion: 1 })
+      })).status).toBe(400);
+
+      // Own profile: name and a built-in avatar.
+      const profile = (body: object) => fetch(`${baseURL}/api/profile`, {
+        method: "PATCH", headers: { Origin: baseURL, Cookie: alice, "Content-Type": "application/json" }, body: JSON.stringify(body)
+      });
+      expect((await profile({ name: "Alice A.", avatar: "ugle" })).status).toBe(200);
+      expect(await (await fetch(`${baseURL}/api/me`, { headers: { Cookie: alice } })).json()).toMatchObject({ name: "Alice A.", avatar: "ugle" });
+      expect((await profile({ name: "Alice", avatar: "../../billede.png" })).status).toBe(400);
+
       const duplicate = await fetch(`${baseURL}/api/accounts`, {
         method: "POST", headers: { Origin: baseURL, Cookie: root, "Content-Type": "application/json" },
         body: JSON.stringify({ username: "Bob", name: "Bob", password: "test-password-123", child: false })

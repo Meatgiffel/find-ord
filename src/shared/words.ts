@@ -38,6 +38,11 @@ export const CATEGORIES = {
 } as const;
 
 export type CategoryId = keyof typeof CATEGORIES;
+
+// Built-in avatars; players pick one of these, no uploads.
+export const AVATARS = { ugle: "🦉", raev: "🦊", hval: "🐋", bi: "🐝", skildpadde: "🐢", egern: "🐿️", pingvin: "🐧", froe: "🐸" } as const;
+export const AVATAR_NAMES: Record<keyof typeof AVATARS, string> = { ugle: "Ugle", raev: "Ræv", hval: "Hval", bi: "Bi", skildpadde: "Skildpadde", egern: "Egern", pingvin: "Pingvin", froe: "Frø" };
+export type AvatarId = keyof typeof AVATARS;
 export type LevelId = "let" | "normal" | "svaer" | "ekspert";
 
 // Bump these when the built-in target words or their category assignments change.

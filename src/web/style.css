@@ -882,3 +882,16 @@ input:focus-visible {
 .stats-table caption { text-align: left; font-weight: 700; color: #536b5f; margin-bottom: 6px; }
 .stats-table th, .stats-table td { padding: 6px 4px; border-bottom: 1px solid #e3e9e0; text-align: left; }
 .stats-table td, .stats-table thead th:not(:first-child) { text-align: right; }
+.avatar-choice { display: flex; flex-wrap: wrap; gap: 6px; border: 0; padding: 0; margin: 8px 0; }
+.avatar-choice legend { font-weight: 700; font-size: 0.8rem; margin-bottom: 4px; }
+.avatar-choice label { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: 1px solid #d6dfd3; border-radius: 10px; font-size: 1.4rem; cursor: pointer; }
+.avatar-choice label:has(input:checked) { border: 2px solid #25483a; background: #eef3ec; }
+.avatar-choice input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.avatar-choice label:has(input:focus-visible) { outline: 3px solid #cf8352; outline-offset: 2px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.form-actions { display: flex; gap: 12px; align-items: center; }
+.admin-password { display: block; margin: 8px 0; font-size: 0.8rem; font-weight: 700; }
+.admin-password input { display: block; width: 100%; margin-top: 4px; }
+.account-row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; align-items: center; }
+.account-actions { display: flex; gap: 10px; }
+.account-actions .text-button { min-height: 40px; }
