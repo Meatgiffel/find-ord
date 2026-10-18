@@ -17,7 +17,29 @@ export function progressForUser(db: Database.Database, userId: string): Progress
     activeDays: scalar("SELECT COUNT(DISTINCT date(created_at, 'localtime')) AS count FROM game_event WHERE user_id = ? AND kind = 'find'"),
     categories: scalar("SELECT COUNT(DISTINCT category) AS count FROM game WHERE user_id = ? AND completed = 1"),
     mostCompletedInCategory: scalar("SELECT COALESCE(MAX(count), 0) AS count FROM (SELECT COUNT(*) AS count FROM game WHERE user_id = ? AND completed = 1 GROUP BY category)"),
-    mostFoundInCategory: scalar("SELECT COALESCE(MAX(count), 0) AS count FROM (SELECT COUNT(*) AS count FROM game_event e JOIN game g ON g.id = e.game_id WHERE e.user_id = ? AND e.kind = 'find' GROUP BY g.category)")
+    mostFoundInCategory: scalar("SELECT COALESCE(MAX(count), 0) AS count FROM (SELECT COUNT(*) AS count FROM game_event e JOIN game g ON g.id = e.game_id WHERE e.user_id = ? AND e.kind = 'find' GROUP BY g.category)"),
+    ...campaignProgress(db, userId)
+  };
+}
+
+const CAMPAIGN_GAMES = "FROM campaign_game cg JOIN campaign c ON c.id = cg.campaign_id JOIN game g ON g.id = cg.game_id WHERE c.user_id = ?";
+
+function campaignProgress(db: Database.Database, userId: string) {
+  const scalar = (sql: string) => (db.prepare(sql).get(userId) as { count: number }).count;
+  // A run continues through completed games in queue order and ends at an abandoned one.
+  // Unplayed or retired games are skipped; they were never finished either way.
+  const rows = db.prepare(`SELECT cg.campaign_id AS campaign, g.completed, g.abandoned ${CAMPAIGN_GAMES} ORDER BY cg.campaign_id, cg.position`).all(userId) as Array<{ campaign: string; completed: number; abandoned: number }>;
+  let longest = 0, run = 0, current = "";
+  for (const row of rows) {
+    if (row.campaign !== current) { current = row.campaign; run = 0; }
+    if (row.abandoned) run = 0;
+    else if (row.completed) longest = Math.max(longest, ++run);
+  }
+  return {
+    campaignCompleted: scalar(`SELECT COUNT(*) AS count ${CAMPAIGN_GAMES} AND g.completed = 1`),
+    campaignCategories: scalar(`SELECT COUNT(DISTINCT g.category) AS count ${CAMPAIGN_GAMES} AND g.completed = 1`),
+    campaignWithoutHints: scalar(`SELECT COUNT(*) AS count ${CAMPAIGN_GAMES} AND g.completed = 1 AND g.hints = '[]'`),
+    longestCampaignRun: longest
   };
 }
 

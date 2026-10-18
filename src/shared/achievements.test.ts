@@ -5,14 +5,16 @@ const empty: Progress = {
   completed: 0, found: 0, unique: 0,
   byLevel: {}, withoutHints: 0, danishLetters: 0,
   activeDays: 0, categories: 0,
-  mostCompletedInCategory: 0, mostFoundInCategory: 0
+  mostCompletedInCategory: 0, mostFoundInCategory: 0,
+  campaignCompleted: 0, campaignCategories: 0, campaignWithoutHints: 0, longestCampaignRun: 0
 };
 
 describe("achievement-katalog", () => {
-  it("har 40 unikke mål med tydelig progression", () => {
+  it("har 47 unikke mål med tydelig progression, heraf 7 kampagnemål", () => {
     const items = achievementsFor(empty);
-    expect(items).toHaveLength(40);
-    expect(new Set(items.map((item) => item.id)).size).toBe(40);
+    expect(items).toHaveLength(47);
+    expect(new Set(items.map((item) => item.id)).size).toBe(47);
+    expect(items.filter((item) => item.group === "kampagne")).toHaveLength(7);
     expect(items.every((item) => !item.unlocked && item.current === 0 && item.target > 0)).toBe(true);
   });
 

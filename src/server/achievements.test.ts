@@ -93,6 +93,30 @@ describe("achievement-motor", () => {
     expect(items.find((item) => item.id === "days-30")?.current).toBe(7);
   });
 
+  it("tæller kampagnebaner, kategorier, baner uden hint og længste forløb uden opgivelse", () => {
+    db.prepare("INSERT INTO campaign (id, user_id, level) VALUES ('kamp', 'alice', 'let')").run();
+    const queue = db.prepare("INSERT INTO campaign_game (campaign_id, position, game_id, retired) VALUES ('kamp', ?, ?, ?)");
+    const categories: CategoryId[] = ["dyr", "mad", "natur", "sport", "vejret", "dyr", "mad", "natur"];
+    categories.forEach((category, index) => {
+      const puzzle = game("alice", category, "let", index + 1);
+      queue.run(index + 1, puzzle.id, 0);
+      if (index === 3) play("alice", puzzle, [{ id: `quit-${index}`, kind: "abandon" }]);
+      else if (index === 7) return; // Still waiting in the queue.
+      else complete("alice", puzzle, index === 0 ? [{ id: `h-${index}`, kind: "hint", word: puzzle.words[0] }] : []);
+    });
+    // A single game outside the campaign does not count.
+    complete("alice", game("alice", "skolen"));
+    const progress = (id: string) => achievementsForUser(db, "alice").find((item) => item.id === id)!;
+    expect(progress("campaign-5")).toMatchObject({ current: 5, unlocked: true });
+    expect(progress("campaign-25").current).toBe(6);
+    // Sport was abandoned, so dyr, mad, natur and vejret count.
+    expect(progress("campaign-categories-5").current).toBe(4);
+    expect(progress("campaign-nohint-10").current).toBe(5);
+    // Positions 1–3 completed, 4 abandoned, 5–7 completed: the longest run is 3.
+    expect(progress("campaign-run-10").current).toBe(3);
+    expect(achievementsForUser(db, "bob").find((item) => item.id === "campaign-5")!.current).toBe(0);
+  });
+
   it("fratager aldrig en tildelt achievement", () => {
     complete("alice", game("alice", "dyr"));
     db.prepare("DELETE FROM game").run();

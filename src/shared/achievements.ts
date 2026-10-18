@@ -9,21 +9,26 @@ export type Progress = {
   categories: number;
   mostCompletedInCategory: number;
   mostFoundInCategory: number;
+  campaignCompleted: number;
+  campaignCategories: number;
+  campaignWithoutHints: number;
+  // Longest run of campaign games completed one after another without giving one up.
+  longestCampaignRun: number;
 };
 
 // Bump when a definition changes. Awards are never revoked: a changed threshold or rule
 // gets a new id, and awards for retired ids stay in the history.
-export const ACHIEVEMENT_CATALOG_VERSION = 1;
+export const ACHIEVEMENT_CATALOG_VERSION = 2;
 
-export type AchievementGroup = "baner" | "ord" | "niveauer" | "hjælp" | "bogstaver" | "dage" | "kategorier";
-export type AchievementIcon = "flag" | "magnifier" | "books" | "star" | "bulb" | "letters" | "calendar" | "palette";
+export type AchievementGroup = "baner" | "ord" | "niveauer" | "hjælp" | "bogstaver" | "dage" | "kategorier" | "kampagne";
+export type AchievementIcon = "flag" | "magnifier" | "books" | "star" | "bulb" | "letters" | "calendar" | "palette" | "route";
 export type Achievement = {
   id: string; title: string; description: string; group: AchievementGroup; icon: AchievementIcon;
   current: number; target: number; unlocked: boolean; unlockedAt?: string | null;
 };
 
 export const ACHIEVEMENT_ICONS: Record<AchievementIcon, string> = {
-  flag: "🏁", magnifier: "🔎", books: "📚", star: "⭐", bulb: "💡", letters: "Æ", calendar: "📅", palette: "🎨"
+  flag: "🏁", magnifier: "🔎", books: "📚", star: "⭐", bulb: "💡", letters: "Æ", calendar: "📅", palette: "🎨", route: "🧭"
 };
 
 export function achievementsFor(progress: Progress): Achievement[] {
@@ -43,6 +48,11 @@ export function achievementsFor(progress: Progress): Achievement[] {
   for (const target of [1, 3, 5]) add(`categories-${target}`, "kategorier", "palette", `${target} kategorier`, `Gennemfør baner i ${target} forskellige kategorier.`, progress.categories, target);
   add("category-games-10", "kategorier", "palette", "Kategorikender", "Gennemfør 10 forskellige baner i samme kategori.", progress.mostCompletedInCategory, 10);
   add("category-words-100", "kategorier", "palette", "Kategorimester", "Find 100 ord i samme kategori.", progress.mostFoundInCategory, 100);
+  // Catalog version 2: campaign goals.
+  for (const target of [5, 25, 100]) add(`campaign-${target}`, "kampagne", "route", `Kampagne × ${target}`, `Gennemfør ${target} kampagnebaner.`, progress.campaignCompleted, target);
+  add("campaign-categories-5", "kampagne", "route", "Kampagnerejsende", "Gennemfør kampagnebaner i 5 forskellige kategorier.", progress.campaignCategories, 5);
+  add("campaign-nohint-10", "kampagne", "route", "Kampagne uden hjælp", "Gennemfør 10 kampagnebaner uden hint.", progress.campaignWithoutHints, 10);
+  for (const target of [10, 25]) add(`campaign-run-${target}`, "kampagne", "route", `${target} i træk`, `Gennemfør ${target} kampagnebaner efter hinanden uden at opgive en.`, progress.longestCampaignRun, target);
   return result;
 }
 

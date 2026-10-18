@@ -38,7 +38,7 @@ Hver konto starter med 2 hintkreditter og kan højst have 5. Der er altid 3 akti
 - Kreditter kan ikke købes og udløber ikke. Et hint trækker 1 kredit i samme transaktion som hintet. Samme hint koster aldrig to gange, og saldoen bliver aldrig negativ.
 - Offline bruges den senest bekræftede saldo minus de hints, der venter på synkronisering. Bruger to offlineenheder den samme kredit, afviser serveren det hint, der kommer sidst, og forklarer hvorfor. Ordfund i samme synkronisering gemmes stadig. Fremdrift på mål vises først, når serveren har godkendt trækkene. Pause bevarer banen uden tidsstraf. Opgivelse afslutter den konkrete bane uden gennemførelsesbelønning; et senere forsøg er en ny bane. Når alle ord er fundet, gennemføres banen én gang. Resultatet vises straks, mens endelig progression og achievements afventer servervalidering ved offline spil. Der er ingen nedtælling, tidsbonus eller tidsbaserede achievements.
 
-Kataloget har 40 achievements. Tildelinger fratages aldrig. Tre mål kræver Ekspert. Ændres en regel eller tærskel, får målet et nyt ID, og den gamle tildeling bevares i historikken.
+Kataloget har 47 achievements (katalogversion 2). Heraf er 7 kampagnemål: 5, 25 og 100 gennemførte kampagnebaner, kampagnebaner i 5 kategorier, 10 kampagnebaner uden hint samt 10 og 25 kampagnebaner i træk uden at opgive en. Ikke-spillede eller udskiftede baner i køen bryder ikke et forløb. Tildelinger fratages aldrig. Tre mål kræver Ekspert. Ændres en regel eller tærskel, får målet et nyt ID, og den gamle tildeling bevares i historikken.
 
 ## Første versions ramme
 
