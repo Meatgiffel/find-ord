@@ -10,6 +10,9 @@ services:
       LAN_HTTP_URL: "${LAN_HTTP_URL:-}"
       TRUSTED_ORIGINS: "${TRUSTED_ORIGINS:-}"
       TZ: Europe/Copenhagen
+      LOG_LEVEL: "${LOG_LEVEL:-info}"
+      GAME_CREATION_LIMIT: "${GAME_CREATION_LIMIT:-60}"
+    stop_grace_period: 15s
     volumes:
       - find-ord-data:/app/data
     healthcheck:

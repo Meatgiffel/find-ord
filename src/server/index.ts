@@ -19,7 +19,24 @@ import { CHILD_POLICY_VERSION } from "../shared/safety.js";
 await (await getMigrations(auth.options)).runMigrations();
 migrateGameData(db);
 const corpus = await importBundledCor();
-console.log(`COR ${corpus.imported} ordformer indlæst.`);
+// LOG_LEVEL=error keeps only failures; the default "info" also logs startup and shutdown.
+const logInfo = process.env.LOG_LEVEL === "error" ? () => {} : (text: string) => console.log(text);
+logInfo(`COR ${corpus.imported} ordformer indlæst.`);
+
+// Each new game or campaign refill generates puzzles on this process. Limit how many
+// one account can request, so a single client cannot keep the server busy.
+const creationLimit = Number(process.env.GAME_CREATION_LIMIT || 60);
+const creationWindowMs = 10 * 60 * 1000;
+const creations = new Map<string, number[]>();
+function creationAllowed(userId: string): boolean {
+  const now = Date.now();
+  const recent = (creations.get(userId) ?? []).filter((time) => now - time < creationWindowMs);
+  if (recent.length >= creationLimit) { creations.set(userId, recent); return false; }
+  recent.push(now);
+  creations.set(userId, recent);
+  return true;
+}
+const CREATION_LIMITED = "Du har hentet mange nye baner på kort tid. Vent lidt, og prøv igen.";
 
 type SessionUser = { id: string; name: string; role?: string | null; username?: string | null };
 const app = express();
@@ -84,11 +101,13 @@ app.post("/api/campaigns", async (req, res) => {
   const parsed = campaignSchema.safeParse(req.body);
   if (!parsed.success) return error(res, 400, "Vælg en gyldig sværhedsgrad.");
   if (!campaignLevels().includes(parsed.data.level)) return error(res, 400, "Dette niveau er endnu ikke tilgængeligt i kampagner.");
+  if (!creationAllowed(current.id)) return error(res, 429, CREATION_LIMITED);
   try { res.json(startCampaign(db, current.id, parsed.data.level, childFor(current.id))); }
   catch { error(res, 503, "Kampagnen kunne ikke oprettes. Prøv igen."); }
 });
 app.post("/api/campaigns/:id/refill", async (req, res) => {
   const current = await user(req, res); if (!current) return;
+  if (!creationAllowed(current.id)) return error(res, 429, CREATION_LIMITED);
   try {
     const result = refillCampaign(db, req.params.id, current.id, childFor(current.id));
     if (!result) return error(res, 404, "Kampagnen blev ikke fundet.");
@@ -103,6 +122,7 @@ app.post("/api/games", async (req, res) => {
   if (!input.success) return error(res, 400, "Vælg en gyldig kategori og sværhedsgrad.");
   const { category, level } = input.data;
   if (!availableLevels(category).includes(level as LevelId)) return error(res, 400, "Dette niveau er endnu ikke tilgængeligt i kategorien.");
+  if (!creationAllowed(current.id)) return error(res, 429, CREATION_LIMITED);
   const id = randomUUID();
   let puzzle: Puzzle;
   try { puzzle = makePuzzle(id, category, level, randomBytes(4).readUInt32BE(), childFor(current.id)); }
@@ -187,7 +207,12 @@ app.post("/api/accounts", async (req, res) => {
 
 const buildPath = resolve("build");
 if (existsSync(buildPath)) {
-  app.use(express.static(buildPath, { index: false }));
+  app.use(express.static(buildPath, {
+    index: false,
+    // Vite fingerprints files in /assets, so they never change under the same name.
+    // The service worker, manifest and index.html keep max-age=0 so updates are found.
+    setHeaders(res, path) { if (path.includes("/assets/")) res.setHeader("Cache-Control", "public, max-age=31536000, immutable"); }
+  }));
   app.get("*", (req, res) => {
     if (req.path.startsWith("/api/")) return error(res, 404, "Ukendt API-kald.");
     res.sendFile(resolve(buildPath, "index.html"));
@@ -195,4 +220,17 @@ if (existsSync(buildPath)) {
 }
 
 const port = Number(process.env.PORT || 3000);
-app.listen(port, "0.0.0.0", () => console.log(`Find ord lytter på ${port}`));
+const server = app.listen(port, "0.0.0.0", () => logInfo(`Find ord lytter på ${port}`));
+
+// Finish open requests and close SQLite cleanly when Docker stops the container.
+function shutdown(signal: string) {
+  logInfo(`${signal} modtaget; lukker ned.`);
+  setTimeout(() => process.exit(1), 10_000).unref();
+  server.close(() => {
+    db.close();
+    process.exit(0);
+  });
+  server.closeIdleConnections();
+}
+process.once("SIGTERM", () => shutdown("SIGTERM"));
+process.once("SIGINT", () => shutdown("SIGINT"));

@@ -62,7 +62,7 @@ describe("HTTP-adgangskontrol", () => {
 
       child = spawn(process.execPath, ["--import", "tsx", "src/server/index.ts"], {
         cwd: process.cwd(),
-        env: { ...process.env, PORT: String(port), DATA_FILE: join(directory, "test.sqlite"), BASE_URL: baseURL },
+        env: { ...process.env, PORT: String(port), DATA_FILE: join(directory, "test.sqlite"), BASE_URL: baseURL, GAME_CREATION_LIMIT: "2" },
         stdio: "ignore"
       });
       await ready(baseURL, child);
@@ -117,6 +117,13 @@ describe("HTTP-adgangskontrol", () => {
         method: "POST", headers: { Origin: baseURL, Cookie: bob, "Content-Type": "application/json" },
         body: JSON.stringify({ events: [] })
       })).status).toBe(404);
+      // GAME_CREATION_LIMIT=2: alice already created one game.
+      const createAgain = () => fetch(`${baseURL}/api/games`, {
+        method: "POST", headers: { Origin: baseURL, Cookie: alice, "Content-Type": "application/json" },
+        body: JSON.stringify({ category: "dyr", level: "let" })
+      });
+      expect((await createAgain()).status).toBe(201);
+      expect((await createAgain()).status).toBe(429);
       expect((await fetch(`${baseURL}/api/games`, {
         method: "POST", headers: { Origin: "http://untrusted.invalid", Cookie: alice, "Content-Type": "application/json" },
         body: JSON.stringify({ category: "dyr", level: "let" })

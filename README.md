@@ -25,6 +25,8 @@ docker compose exec find-ord npm run bootstrap
 
 Åbn adressen i `BASE_URL`. Bootstrap beder interaktivt om brugernavn, visningsnavn og adgangskode til den første administrator; der findes ingen standardkonto. Administratoren kan derefter oprette separate voksen- og børnekonti i appen. Bootstrap kan kun bruges, når databasen er tom.
 
+Valgfrit kan `LOG_LEVEL=error` begrænse loggen til fejl, og `GAME_CREATION_LIMIT` (standard 60) styrer, hvor mange nye baner og kampagnepåfyldninger én konto kan hente pr. 10 minutter. Containeren lukker SQLite pænt ned ved `docker compose stop`. Imaget er afprøvet på linux/amd64; linux/arm64 er endnu ikke verificeret.
+
 Compose gemmer SQLite-database og en lokalt genereret authentication-hemmelighed i volumet `find-ord-data`. Bevar begge dele ved opgradering og backup. Servicen er tænkt til en betroet lokal installation; offentlig interneteksponering er ikke gennemgået.
 
 ### Telefon, tablet og HTTPS

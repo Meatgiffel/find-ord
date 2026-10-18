@@ -641,9 +641,9 @@
       const serverCampaigns = await api("/campaigns") as DownloadedCampaign[];
       for (const campaign of serverCampaigns) {
         const ready = games.filter((game) => game.campaignId === campaign.id && !game.completed).length;
-        const bundle = ready < 3
-          ? await api(`/campaigns/${campaign.id}/refill`, { method: "POST" }) as DownloadedCampaign
-          : campaign;
+        let bundle = campaign;
+        // A failed refill (e.g. the server's creation limit) keeps the games already queued.
+        if (ready < 3) bundle = await api(`/campaigns/${campaign.id}/refill`, { method: "POST" }).catch(() => campaign) as DownloadedCampaign;
         await storeCampaign(bundle);
       }
       try {

@@ -9,4 +9,5 @@ RUN npm run build && mkdir -p /app/data && chown -R node:node /app/data
 ENV NODE_ENV=production PORT=3000 DATA_FILE=/app/data/find-ord.sqlite
 USER node
 EXPOSE 3000
-CMD ["npm", "start"]
+# Run node directly so it receives SIGTERM and can close SQLite cleanly.
+CMD ["node", "dist/server/index.js"]
