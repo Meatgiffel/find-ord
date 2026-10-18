@@ -45,6 +45,7 @@
   let newChild = false;
   let showAccounts = false;
   let achievements: Achievement[] = [];
+  let newAchievements: Achievement[] = [];
   let showAchievements = false;
   let syncing = false;
   let syncTask: Promise<void> | null = null;
@@ -75,6 +76,7 @@
   $: activePending = active ? pendingGameIds.includes(active.id) : false;
   $: if ((active?.id ?? null) !== shownGameId) {
     shownGameId = active?.id ?? null;
+    newAchievements = [];
     focusCell = { row: 0, col: 0 };
     // Start a newly opened game or the home page at the top instead of the previous scroll position.
     void tick().then(() => window.scrollTo(0, 0));
@@ -640,6 +642,16 @@
       }
       try {
         const items = await api("/achievements") as Achievement[];
+        // Announce goals unlocked since the last known list; the first list on a device is not news.
+        if (achievements.length) {
+          const before = new Set(achievements.filter((item) => item.unlocked).map((item) => item.id));
+          const unlocked = items.filter((item) => item.unlocked && !before.has(item.id));
+          if (unlocked.length) {
+            newAchievements = [...newAchievements, ...unlocked];
+            // The completion panel lists them itself.
+            if (!active?.completed) message = `Ny achievement: ${unlocked.map((item) => item.title).join(", ")}`;
+          }
+        }
         achievements = items;
         await local.achievements.put({ owner: identity.id, items, updatedAt: Date.now() });
       } catch { /* Spiltræk er allerede synkroniseret; belønninger opdateres ved næste kontakt. */ }
@@ -752,7 +764,8 @@
             <div class="completion-panel" aria-live="polite">
               <h2 tabindex="-1" bind:this={completionHeading}>{active.abandoned ? "Bane opgivet" : "Bane gennemført!"}</h2>
               <p>Du fandt {active.found.length} af {active.puzzle.words.length} ord.{active.abandoned ? " En opgivet bane tæller ikke som gennemført." : ""}</p>
-              <p class="completion-sync">{activePending ? "Resultatet er gemt på enheden og afventer synkronisering." : "Resultatet er gemt."}</p>
+              <p class="completion-sync">{activePending ? "Resultatet er gemt på enheden og afventer synkronisering. Nye achievements beregnes, når det er synkroniseret." : "Resultatet er gemt."}</p>
+              {#if newAchievements.length}<p class="completion-achievements">★ Ny achievement: {newAchievements.map((item) => item.title).join(", ")}</p>{/if}
               <div class="completion-actions">
                 {#if active.campaignId}<button class="primary" onclick={nextInCampaign} disabled={busy}>Næste bane →</button>
                 {:else}<button class="primary" onclick={newSingleGame} disabled={busy}>{busy ? "Henter bane…" : "Ny bane →"}</button>{/if}

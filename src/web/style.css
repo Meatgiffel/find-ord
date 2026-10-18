@@ -588,6 +588,7 @@ main.playing { padding-top: 18px; }
 .completion-panel h2:focus { outline: 3px solid #cf8352; outline-offset: 3px; }
 .completion-panel p { margin: 8px 0; line-height: 1.45; }
 .completion-sync, .completion-note { font-size: 0.82rem; }
+.completion-achievements { font-weight: 700; color: #8a5a22; }
 .completion-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
 .completion-actions button { min-height: 44px; }
 .completion-note { margin-bottom: 0 !important; }
