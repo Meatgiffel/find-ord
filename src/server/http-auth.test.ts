@@ -41,6 +41,11 @@ describe("HTTP-adgangskontrol", () => {
         stdio: "ignore"
       });
       await ready(baseURL, child);
+      const readiness = await fetch(`${baseURL}/api/ready`);
+      expect(readiness.status).toBe(200);
+      expect(await readiness.json()).toMatchObject({ ready: true, problems: [] });
+      expect(readiness.headers.get("x-request-id")).toMatch(/^[0-9a-f-]{36}$/);
+      expect((await fetch(`${baseURL}/api/health`, { headers: { "X-Request-Id": "proxy-123" } })).headers.get("x-request-id")).toBe("proxy-123");
       expect((await fetch(`${baseURL}/api/me`)).status).toBe(401);
       expect((await fetch(`${baseURL}/api/auth/sign-up/email`, {
         method: "POST", headers: { Origin: baseURL, "Content-Type": "application/json" },

@@ -15,6 +15,9 @@
   let identity: Identity | null = null;
   let serverVersions: PuzzleVersions | null = null;
   let online = navigator.onLine;
+  // The device's own network state, so "no internet" and "server not answering" differ.
+  let networkUp = navigator.onLine;
+  $: connectionLabel = sessionExpired ? "Session udløbet" : online ? "Forbundet" : networkUp ? "Serveren svarer ikke" : "Ingen internet";
   let sessionExpired = false;
   let loading = true;
   let busy = false;
@@ -179,8 +182,8 @@
   }
 
   onMount(() => {
-    const onOnline = () => { void reconnect(); };
-    const onOffline = () => { online = false; };
+    const onOnline = () => { networkUp = true; void reconnect(); };
+    const onOffline = () => { networkUp = false; online = false; };
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
     if ("serviceWorker" in navigator) {
@@ -830,7 +833,7 @@
 <header class="topbar" class:playing={!!active}>
   <div class="brand"><span class="brandmark">F<span>I</span>ND</span><small>ORDJAGT PÅ DANSK</small></div>
   {#if identity}
-    <div class="top-actions"><span class="connection" class:offline={!online}>{online ? "● Forbundet" : "● Offline"}</span>{#if sessionExpired}<button class="text-button" onclick={showLogin}>Log ind igen</button>{/if}<button class="text-button" onclick={signOut} disabled={markingWord}>Log ud</button></div>
+    <div class="top-actions"><span class="connection" class:offline={!online || sessionExpired} title={online && !sessionExpired ? "" : "Hentede baner kan spilles videre. Trækkene sendes, når forbindelsen er tilbage."}>● {connectionLabel}</span>{#if sessionExpired}<button class="text-button" onclick={showLogin}>Log ind igen</button>{/if}<button class="text-button" onclick={signOut} disabled={markingWord}>Log ud</button></div>
   {/if}
 </header>
 

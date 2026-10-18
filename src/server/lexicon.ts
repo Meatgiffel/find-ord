@@ -97,6 +97,8 @@ export async function importCor(db: Database.Database, source: string, version: 
     // Tables from the first import format; the bundled file is the source of truth.
     db.exec("DROP TABLE IF EXISTS cor_word; DROP TABLE IF EXISTS cor_import");
   })();
+  // The import is one large transaction; shrink the WAL file again afterwards.
+  db.pragma("wal_checkpoint(TRUNCATE)");
   return { ...report, alreadyPresent: false };
 }
 

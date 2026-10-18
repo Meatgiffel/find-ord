@@ -37,6 +37,8 @@ jobs:
         run: |
           set -o pipefail
           npm run build 2>&1 | tee reports/build.log
+      - name: Bundle budget
+        run: npm run check:bundle
       - name: Save check reports
         if: always()
         uses: actions/upload-artifact@v4

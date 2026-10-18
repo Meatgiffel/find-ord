@@ -1,13 +1,16 @@
 import express, { type Request, type Response } from "express";
 import { toNodeHandler, fromNodeHeaders } from "better-auth/node";
 import { getMigrations } from "better-auth/db/migration";
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { z } from "zod";
 import { auth, authForHost, baseURL, CLIENT_IP_HEADER, lanAuth, trustedOrigins } from "./auth.js";
 import { dataFile, db, migrateGameData } from "./database.js";
 import { finishSetup, prepareSetupToken, setupNeeded, setupTokenMatches } from "./setup.js";
-import { importBundledCor } from "./lexicon.js";
+import { COR_VERSION, importBundledCor } from "./lexicon.js";
+import { log } from "./log.js";
+import { LATEST_MIGRATION } from "./migrations.js";
 import { achievementsForUser, statsForUser } from "./achievements.js";
 import { challengeState } from "./challenges.js";
 import { campaignNeeds, campaignsForUser, refillCampaign, startCampaign } from "./campaigns.js";
@@ -18,18 +21,25 @@ import type { Move, Puzzle } from "../shared/game.js";
 import { VALIDATION_VERSION, validatePuzzle } from "../shared/validation.js";
 import { CHILD_POLICY_VERSION } from "../shared/safety.js";
 
-await (await getMigrations(auth.options)).runMigrations();
-migrateGameData(db);
-const corpus = await importBundledCor(db);
-// LOG_LEVEL=error keeps only failures; the default "info" also logs startup and shutdown.
-const logInfo = process.env.LOG_LEVEL === "error" ? () => {} : (text: string) => console.log(text);
-logInfo(`COR ${corpus.imported} ordformer indlæst.`);
+// A failed start (e.g. a full disk during the first word import) is logged and stops the
+// process; Docker restarts it, and the import resumes cleanly once there is room.
+let corpus: Awaited<ReturnType<typeof importBundledCor>>;
+try {
+  await (await getMigrations(auth.options)).runMigrations();
+  migrateGameData(db);
+  corpus = await importBundledCor(db);
+} catch (cause) {
+  log("error", "startup-failed", { error: cause instanceof Error ? cause.message : String(cause), code: (cause as { code?: string })?.code });
+  process.exit(1);
+}
+const versions = { words: WORD_LIST_VERSION, categories: CATEGORY_TAG_VERSION, childPolicy: CHILD_POLICY_VERSION, validation: VALIDATION_VERSION, cor: COR_VERSION, schema: LATEST_MIGRATION };
+log("info", "startup", { versions, corForms: corpus.imported });
 // Puzzles are generated in a worker thread and a few are kept ready per combination.
 const supply = new PuzzleSupply(db, workerGenerator(Number(process.env.GENERATION_TIMEOUT_MS || 5000)), {
   queueLimit: Number(process.env.GENERATION_QUEUE_LIMIT || 8), maxCached: Number(process.env.PUZZLE_CACHE_LIMIT || 300)
 });
 const pruned = supply.prune();
-if (pruned) logInfo(`${pruned} cachede baner fra en ældre ordliste eller politik er fjernet.`);
+log("info", "puzzle-cache", { pruned, ...supply.status() });
 const setupToken = prepareSetupToken(db, dataFile);
 if (setupToken) console.log(`Ingen konti endnu. Opret første administrator på ${baseURL}/?opsaetning=${setupToken}`);
 
@@ -51,6 +61,31 @@ const CREATION_LIMITED = "Du har hentet mange nye baner på kort tid. Vent lidt,
 type SessionUser = { id: string; name: string; role?: string | null; username?: string | null };
 const app = express();
 app.disable("x-powered-by");
+// Express 4 does not catch rejected async handlers. Pass them to the error handler below,
+// so an error such as a full disk answers the request instead of stopping the process.
+for (const method of ["get", "post", "patch", "put", "delete"] as const) {
+  const original = app[method].bind(app) as (...args: unknown[]) => unknown;
+  (app as unknown as Record<string, unknown>)[method] = (path: unknown, ...handlers: unknown[]) => handlers.length
+    ? original(path, ...handlers.map((handler) => typeof handler === "function" && handler.length < 4
+      ? (req: Request, res: Response, next: (error?: unknown) => void) => {
+        try { Promise.resolve(handler(req, res, next)).catch(next); } catch (cause) { next(cause); }
+      }
+      : handler))
+    : original(path);
+}
+// Every request gets an ID (or keeps a safe one from the proxy) for logs and the X-Request-Id header.
+app.use((req, res, next) => {
+  const given = req.get("x-request-id");
+  const requestId = given && /^[\w.-]{1,64}$/.test(given) ? given : randomUUID();
+  res.locals.requestId = requestId;
+  res.setHeader("X-Request-Id", requestId);
+  if (!req.path.startsWith("/api/")) return next();
+  const started = performance.now();
+  res.on("finish", () => log(res.statusCode >= 500 ? "error" : "info", "request", {
+    requestId, method: req.method, path: req.path, status: res.statusCode, ms: Math.round(performance.now() - started)
+  }));
+  next();
+});
 // TRUST_PROXY names the reverse proxy allowed to report the client address (Express
 // "trust proxy" syntax, e.g. "loopback" or "192.168.50.0/24"). Without it the socket
 // address is used. Either way the value replaces any header a client sends itself.
@@ -77,7 +112,18 @@ function serializedGame(row: GameRow) {
   return { puzzle: JSON.parse(row.puzzle) as Puzzle, found: JSON.parse(row.found) as string[], hints: JSON.parse(row.hints) as string[], completed: Boolean(row.completed), abandoned: Boolean(row.abandoned), revision: row.revision };
 }
 
+// Liveness: the process answers. Readiness: database, schema, word data and versions.
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
+app.get("/api/ready", (_req, res) => {
+  const problems: string[] = [];
+  try {
+    db.prepare("SELECT 1").get();
+    const schema = (db.prepare("SELECT MAX(version) AS version FROM app_schema_migration").get() as { version: number }).version;
+    if (schema !== LATEST_MIGRATION) problems.push(`skema ${schema} i stedet for ${LATEST_MIGRATION}`);
+    if (!db.prepare("SELECT 1 FROM lexicon_import WHERE source_version = ?").get(COR_VERSION)) problems.push(`COR ${COR_VERSION} er ikke indlæst`);
+  } catch (cause) { problems.push(`databasen svarer ikke: ${cause instanceof Error ? cause.message : cause}`); }
+  res.status(problems.length ? 503 : 200).json({ ready: !problems.length, problems, versions, cache: supply.status() });
+});
 // Account creation goes through the admin API. Better Auth's public sign-up endpoint is closed.
 app.use("/api/auth/sign-up", (_req, res) => error(res, 403, "En administrator opretter brugerkonti."));
 const authHandler = toNodeHandler(auth);
@@ -158,7 +204,7 @@ app.post("/api/campaigns/:id/refill", async (req, res) => {
 // A full queue or a generation timeout is reported with Retry-After, so the client can explain it.
 function generationError(res: Response, cause: unknown, fallback: string) {
   if (cause instanceof SupplyBusyError) { res.setHeader("Retry-After", "5"); return error(res, 503, cause.message); }
-  console.error("Banegenerering fejlede:", cause instanceof Error ? cause.message : cause);
+  log("error", "generation-failed", { requestId: res.locals.requestId, error: cause instanceof Error ? cause.message : String(cause), cache: supply.status() });
   res.setHeader("Retry-After", "2");
   error(res, 503, fallback);
 }
@@ -185,7 +231,9 @@ app.post("/api/games", async (req, res) => {
   if (!availableLevels(category, child).includes(level as LevelId)) return error(res, 400, "Dette niveau er endnu ikke tilgængeligt i kategorien.");
   if (!creationAllowed(current.id)) return error(res, 429, CREATION_LIMITED);
   let puzzle: Puzzle;
-  try { puzzle = await supply.take(category, level, child); }
+  const generationStarted = performance.now();
+  const cachedPuzzle = supply.takeCached(category, level, child);
+  try { puzzle = cachedPuzzle ?? await supply.take(category, level, child); }
   catch (cause) { return generationError(res, cause, "Banen kunne ikke dannes. Prøv igen."); }
   const stored = db.transaction(() => {
     // A parallel request with the same ID may have finished while this one waited.
@@ -198,6 +246,7 @@ app.post("/api/games", async (req, res) => {
   })();
   if (stored === null) return error(res, 409, "Forespørgslen er allerede brugt til en anden bane.");
   if (stored !== puzzle.id) { const game = loadGameForUser(db, stored, current.id); return game ? res.json(serializedGame(game)) : error(res, 410, "Banen fra forespørgslen findes ikke længere."); }
+  log("info", "game-created", { requestId: res.locals.requestId, source: cachedPuzzle ? "cache" : "generated", ms: Math.round(performance.now() - generationStarted), gameLevel: level, child, cache: supply.status() });
   res.status(201).json({ puzzle, found: [], hints: [], completed: false, abandoned: false, revision: 0 });
 });
 
@@ -352,12 +401,21 @@ if (existsSync(buildPath)) {
   });
 }
 
+app.use((cause: unknown, _req: Request, res: Response, next: (error?: unknown) => void) => {
+  if (res.headersSent) return next(cause);
+  const code = (cause as { code?: string })?.code;
+  log("error", "request-failed", { requestId: res.locals.requestId, code, error: cause instanceof Error ? cause.message : String(cause) });
+  if (code === "SQLITE_FULL") return error(res, 507, "Serverens disk er fuld. Dine træk er gemt på enheden og sendes senere.");
+  error(res, 500, "Der opstod en fejl på serveren. Prøv igen.");
+});
+process.on("unhandledRejection", (cause) => log("error", "unhandled-rejection", { error: cause instanceof Error ? cause.message : String(cause) }));
+
 const port = Number(process.env.PORT || 3000);
-const server = app.listen(port, "0.0.0.0", () => logInfo(`Find ord lytter på ${port}`));
+const server = app.listen(port, "0.0.0.0", () => log("info", "listening", { port }));
 
 // Finish open requests and close SQLite cleanly when Docker stops the container.
 function shutdown(signal: string) {
-  logInfo(`${signal} modtaget; lukker ned.`);
+  log("info", "shutdown", { signal });
   setTimeout(() => process.exit(1), 10_000).unref();
   server.close(() => {
     void supply.close().finally(() => {
