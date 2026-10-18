@@ -31,7 +31,7 @@ Compose gemmer SQLite-database og en lokalt genereret authentication-hemmelighed
 
 PWA-installation på en anden enhed kræver HTTPS med et certifikat, som enheden stoler på. Sæt `BASE_URL` til den eksterne HTTPS-adresse, og lad en reverse proxy videresende til port 3000. Tilføj eventuelle andre tilladte origins i `TRUSTED_ORIGINS` som en kommasepareret liste. Bind helst appens port til loopback eller et afgrænset lokalnet. Almindelig HTTP på lokalnettet sender loginoplysninger og sessionscookies ukrypteret og kan ikke bruges til PWA-installation på en anden enhed.
 
-Første login og nye baner kræver serverkontakt. En komplet hentet bane gemmes på enheden og kan fortsættes offline. Browseren eller brugeren kan slette lokal lagring; synkronisér derfor før rydning af browserdata eller skift af enhed. Serverbackup omfatter kun synkroniserede træk.
+Første login og nye baner kræver serverkontakt. En ny app-version installeres i baggrunden og aktiveres først, når spilleren trykker "Opdatér" på forsiden; den afbryder aldrig en bane, og gemte baner bevares. En komplet hentet bane gemmes på enheden og kan fortsættes offline. Browseren eller brugeren kan slette lokal lagring; synkronisér derfor før rydning af browserdata eller skift af enhed. Serverbackup omfatter kun synkroniserede træk.
 
 En kampagne holder samme sværhedsgrad og skifter kategori mellem banerne. Højst tre uafsluttede baner hentes på forhånd. Når køen er tom, kræver nye baner forbindelse. En udløbet onlinesession stopper ikke allerede hentede baner for den senest indloggede konto; nyt login kræves for synkronisering.
 

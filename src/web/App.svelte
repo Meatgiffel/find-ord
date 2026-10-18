@@ -5,6 +5,7 @@
   import { CATEGORIES, LEVELS, availableLevels, campaignLevels, directionDescription, type CategoryId, type LevelId } from "../shared/words.js";
   import { cellsBetween, findWord, HINT_LIMIT, hintsRemaining, visibleHint, wordAt, type Move, type Point, type Puzzle } from "../shared/game.js";
   import { snapDragEnd } from "./drag.js";
+  import { applyUpdate, updateReady } from "./pwa.js";
   import { newMoveId } from "./ids.js";
   import type { Achievement } from "../shared/achievements.js";
 
@@ -719,6 +720,7 @@
     </section>
   {:else}
     {#if !active}
+      {#if $updateReady}<div class="update-banner" role="status"><span>En ny version af Find ord er klar.</span><button class="secondary" onclick={() => void applyUpdate()} disabled={markingWord}>Opdatér</button></div>{/if}
       <div class="welcome"><div><div class="eyebrow">HEJ {identity.name.toLocaleUpperCase("da-DK")}</div><h1>Find ord.</h1></div><div class="status-pill">{pending ? `${pending} afventer synkronisering` : online ? "Alt er synkroniseret" : "Gemt på enheden"}</div></div>
       {#if identity.child}<p class="child-notice">Børneordlisten og kontrollen af skjulte ord er stadig under gennemgang. Spil sammen med en voksen i denne første udgave. Hentede baner kan fortsættes offline; ændringer i sikkerhedskontrollen tjekkes ved næste forbindelse.</p>{/if}
       <section class="card launch-card">
