@@ -164,6 +164,17 @@ export function categoryWords(category: CategoryId, child = false): string[] {
   return child ? words.filter((word) => !definition.adultOnly?.[word]) : words;
 }
 
+// Words in the same category that are forms of one COR lemma. A board uses at most one
+// word from each group. content.test.ts checks this list against content/ordkilder.tsv.
+export const LEMMA_GROUPS: readonly (readonly string[])[] = [
+  ["MOS", "MOSE"], ["KLIT", "KLITTER"], ["BOLLE", "BOLLER"], ["SPIL", "SPILLER"], ["LØB", "LØBE"],
+  ["HOP", "HOPPE"], ["KAST", "KASTE"], ["SKY", "SKYET"], ["VARM", "VARME"], ["BLÆSENDE", "BLÆST"]
+];
+const lemmaOf = new Map(LEMMA_GROUPS.flatMap((group) => group.map((word) => [word, group[0]] as const)));
+export function lemmaKey(word: string): string {
+  return lemmaOf.get(word) ?? word;
+}
+
 // Reading level is separate from child approval: 1 = up to 4 letters, 2 = 5–7, 3 = 8 or more.
 export function readingLevel(word: string): 1 | 2 | 3 {
   return word.length <= 4 ? 1 : word.length <= 7 ? 2 : 3;
@@ -182,7 +193,8 @@ export function availableLevels(category: CategoryId, child = false): LevelId[] 
 export function levelsCoveredBy(words: readonly string[]): LevelId[] {
   return (Object.keys(LEVELS) as LevelId[]).filter((level) => {
     const setting = LEVELS[level];
-    return words.filter((word) => word.length >= setting.min && word.length <= setting.max).length >= setting.words;
+    // Forms of one lemma count once, since a board uses at most one of them.
+    return new Set(words.filter((word) => word.length >= setting.min && word.length <= setting.max).map(lemmaKey)).size >= setting.words;
   });
 }
 

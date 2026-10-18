@@ -56,6 +56,15 @@ Regler for tvetydige ord og bøjninger:
 
 Niveauet styrer ordlængde, gitterstørrelse, antal ord og retninger, men ikke ordklassen. Ordklassen bestemmes af kategorilisterne, som mest består af navneord og nogle få tillægsord og udsagnsord (fx KLART og LØBE). Hvert niveau har en minimumslængde og en maksimumslængde for ordene. Et niveau tilbydes kun i en kategori, når kategorien har mindst så mange ord med en tilladt længde, som en bane bruger. Det gælder for hver profiltype for sig. Børn får aldrig voksenlisten i stedet. Er der for få ord, bliver niveauet skjult for den profil. Dækningen pr. kategori, niveau og profiltype står i ordrapporten.
 
+## Udvælgelse til sværhedsgrader
+
+- **Klassifikation:** Sværhed styres af ordlængde (niveauernes min. og maks. i [spilreglerne](spilregler.md)) og af gitterstørrelse og retninger. Der findes ingen frekvensdata med passende vilkår, så bekendthed sikres ved, at kategorilisterne kun indeholder kuraterede, almindelige ord. Læseniveauet (1–3) bruges til rapportering og er ikke et filter.
+- **Rækkefølge i generatoren:** Generatoren filtrerer først på profil (børneliste), kategori og længde. Derefter blandes ordene med banens seed. En bane har aldrig det samme målord to gange.
+- **Bøjninger:** Er flere ord i samme kategori bøjninger af samme COR-lemma (fx LØB og LØBE), bruger en bane højst ét af dem. Grupperne står i `LEMMA_GROUPS` i `src/shared/words.ts`, og en test sammenholder dem med COR-ID'erne. Kapaciteten tælles pr. lemma.
+- **Gentagelser:** Målord fra spillerens 5 seneste baner bruges kun, når der ikke er nok andre ord. Fra cachen vælges den bane, der deler færrest ord med de seneste baner.
+- **Kapacitet:** Er puljen for lille for kategori, niveau og profil, er kombinationen utilgængelig, og serveren afviser den. Kategorier blandes aldrig, og børnepolitikken lempes aldrig.
+- **Variation:** `npm run test:generator` rapporterer for hver kombination, hvor mange af puljens ord der blev brugt, og den største andel baner, der brugte samme ord. Ved 200 seeds blev alle puljens ord brugt i alle kombinationer. Den største andel var 50 % (Farver på Ekspert, 20 af 46 ord pr. bane).
+
 ## Børnepolitik (version 3)
 
 En børneprofil møder kun målord, der er eksplicit godkendt til børn. Ukendte og ikke-gennemgåede ord er aldrig godkendte.

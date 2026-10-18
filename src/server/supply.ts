@@ -6,7 +6,7 @@ import { CHILD_POLICY_VERSION } from "../shared/safety.js";
 import { VALIDATION_VERSION, validatePuzzle } from "../shared/validation.js";
 import { CATEGORIES, CATEGORY_TAG_VERSION, WORD_LIST_VERSION, availableLevels, type CategoryId, type LevelId } from "../shared/words.js";
 
-export type GenerateRequest = { id: string; category: CategoryId; level: LevelId; seed: number; child: boolean };
+export type GenerateRequest = { id: string; category: CategoryId; level: LevelId; seed: number; child: boolean; avoid?: string[] };
 export type Generator = { run(request: GenerateRequest): Promise<Puzzle>; close(): Promise<void> };
 
 export class SupplyBusyError extends Error {
@@ -65,13 +65,13 @@ export function workerGenerator(timeoutMs = 3000): Generator {
 // Generates in the calling thread; for tests and scripts.
 export function inlineGenerator(): Generator {
   return {
-    run: async (request) => makePuzzle(request.id, request.category, request.level, request.seed, request.child),
+    run: async (request) => makePuzzle(request.id, request.category, request.level, request.seed, request.child, undefined, new Set(request.avoid)),
     close: async () => {}
   };
 }
 
 export type SupplyOptions = { queueLimit?: number; perKey?: number; maxCached?: number; retries?: number };
-type Job = { category: CategoryId; level: LevelId; child: boolean; urgent: boolean; resolve: (puzzle: Puzzle) => void; reject: (error: Error) => void };
+type Job = { category: CategoryId; level: LevelId; child: boolean; urgent: boolean; avoid?: string[]; resolve: (puzzle: Puzzle) => void; reject: (error: Error) => void };
 
 // Keeps a small cache of validated puzzles per category, level, profile and version, and
 // refills it in the background after each use. Cached puzzles are used once, so a player
@@ -117,17 +117,20 @@ export class PuzzleSupply {
       .get(PuzzleSupply.key(category, level, child)) as { count: number }).count;
   }
 
-  // Takes a cached puzzle without waiting; null when none is ready.
-  takeCached(category: CategoryId, level: LevelId, child: boolean): Puzzle | null {
+  // Takes a cached puzzle without waiting; null when none is ready. With avoid, the
+  // cached puzzle sharing the fewest target words with it is chosen.
+  takeCached(category: CategoryId, level: LevelId, child: boolean, avoid: ReadonlySet<string> = new Set()): Puzzle | null {
     const key = PuzzleSupply.key(category, level, child);
     const take = this.db.transaction(() => {
-      for (;;) {
-        const row = this.db.prepare("SELECT id, puzzle FROM puzzle_cache WHERE cache_key = ? ORDER BY created_at, id LIMIT 1").get(key) as { id: string; puzzle: string } | undefined;
-        if (!row) return null;
-        this.db.prepare("DELETE FROM puzzle_cache WHERE id = ?").run(row.id);
-        const puzzle = JSON.parse(row.puzzle) as Puzzle;
+      const rows = this.db.prepare("SELECT id, puzzle FROM puzzle_cache WHERE cache_key = ? ORDER BY created_at, id").all(key) as Array<{ id: string; puzzle: string }>;
+      const ranked = rows.map((row) => ({ id: row.id, puzzle: JSON.parse(row.puzzle) as Puzzle }))
+        .map((item) => ({ ...item, overlap: item.puzzle.words.filter((word) => avoid.has(word)).length }))
+        .sort((a, b) => a.overlap - b.overlap);
+      for (const { id, puzzle } of ranked) {
+        this.db.prepare("DELETE FROM puzzle_cache WHERE id = ?").run(id);
         if (puzzle.child === child && puzzle.category === category && puzzle.level === level && validatePuzzle(puzzle) === null) return puzzle;
       }
+      return null;
     });
     const puzzle = take();
     this.refill(category, level, child);
@@ -135,9 +138,9 @@ export class PuzzleSupply {
   }
 
   // A cached puzzle, or a newly generated one when the cache is empty.
-  async take(category: CategoryId, level: LevelId, child: boolean): Promise<Puzzle> {
+  async take(category: CategoryId, level: LevelId, child: boolean, avoid: ReadonlySet<string> = new Set()): Promise<Puzzle> {
     if (!availableLevels(category, child).includes(level)) throw new Error("Dette niveau er ikke tilgængeligt i kategorien.");
-    return this.takeCached(category, level, child) ?? await this.enqueue(category, level, child, true);
+    return this.takeCached(category, level, child, avoid) ?? await this.enqueue(category, level, child, true, [...avoid]);
   }
 
   // Makes sure at least count puzzles are cached across the given categories, e.g. before
@@ -182,7 +185,7 @@ export class PuzzleSupply {
     }
   }
 
-  private enqueue(category: CategoryId, level: LevelId, child: boolean, urgent: boolean): Promise<Puzzle> {
+  private enqueue(category: CategoryId, level: LevelId, child: boolean, urgent: boolean, avoid?: string[]): Promise<Puzzle> {
     if (this.queue.length >= this.queueLimit) {
       // A player request may push out a background refill, but never another player request.
       let refill = -1;
@@ -191,7 +194,7 @@ export class PuzzleSupply {
       this.queue.splice(refill, 1)[0].reject(new SupplyBusyError());
     }
     return new Promise<Puzzle>((resolve, reject) => {
-      const job = { category, level, child, urgent, resolve, reject };
+      const job = { category, level, child, urgent, avoid, resolve, reject };
       // Player requests go before background refills.
       const index = urgent ? this.queue.findIndex((item) => !item.urgent) : -1;
       if (index >= 0) this.queue.splice(index, 0, job); else this.queue.push(job);
@@ -208,7 +211,7 @@ export class PuzzleSupply {
         let made: Puzzle | null = null;
         for (let attempt = 0; attempt <= this.retries && !made; attempt++) {
           try {
-            const puzzle = await this.generator.run({ id: randomUUID(), category: job.category, level: job.level, seed: randomBytes(4).readUInt32BE(), child: job.child });
+            const puzzle = await this.generator.run({ id: randomUUID(), category: job.category, level: job.level, seed: randomBytes(4).readUInt32BE(), child: job.child, avoid: job.avoid });
             // The worker's result is checked again here before it can be stored or delivered.
             if (puzzle.category !== job.category || puzzle.level !== job.level || puzzle.child !== job.child || validatePuzzle(puzzle)) throw new Error("Banen kunne ikke valideres.");
             made = puzzle;

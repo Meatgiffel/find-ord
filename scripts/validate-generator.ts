@@ -11,7 +11,10 @@ if (!Number.isInteger(seeds) || seeds < 1) throw new Error("Brug --seeds med et 
 const versions = { words: WORD_LIST_VERSION, categories: CATEGORY_TAG_VERSION, childPolicy: CHILD_POLICY_VERSION, validation: VALIDATION_VERSION };
 type Profile = "barn" | "voksen";
 type Failure = { category: CategoryId; level: LevelId; profile: Profile; seed: number; error: string; versions: typeof versions };
-type Combination = { category: CategoryId; level: LevelId; profile: Profile; seeds: number; valid: number; successRate: number; averageMs: number; maxMs: number };
+// Variation: how many pool words appeared as targets, and the largest share of boards
+// that used the same word.
+type Combination = { category: CategoryId; level: LevelId; profile: Profile; seeds: number; valid: number; successRate: number; averageMs: number; maxMs: number;
+  poolWords: number; distinctTargets: number; maxWordShare: number };
 const failures: Failure[] = [];
 const combinations: Combination[] = [];
 const unavailable: Array<{ category: CategoryId; level: LevelId; profile: Profile; words: number; needed: number }> = [];
@@ -29,6 +32,7 @@ for (const category of Object.keys(CATEGORIES) as CategoryId[]) {
     }
     for (const level of availableLevels(category, child)) {
       let valid = 0, total = 0, max = 0;
+      const used = new Map<string, number>();
       const allowed = new Set(categoryWords(category, child));
       for (let seed = 1; seed <= seeds; seed++) {
         const began = performance.now();
@@ -39,6 +43,7 @@ for (const category of Object.keys(CATEGORIES) as CategoryId[]) {
           if (!puzzle.words.every((word) => allowed.has(word))) throw new Error("Et målord hører ikke til banens kategori og profil.");
           valid++;
           checked++;
+          for (const word of puzzle.words) used.set(word, (used.get(word) ?? 0) + 1);
         } catch (cause) {
           const error = cause instanceof Error ? cause.message : String(cause);
           failures.push({ category, level, profile, seed, error, versions });
@@ -49,7 +54,9 @@ for (const category of Object.keys(CATEGORIES) as CategoryId[]) {
         max = Math.max(max, elapsed);
       }
       combinations.push({ category, level, profile, seeds, valid, successRate: valid / seeds,
-        averageMs: Math.round(total / seeds * 10) / 10, maxMs: Math.round(max * 10) / 10 });
+        averageMs: Math.round(total / seeds * 10) / 10, maxMs: Math.round(max * 10) / 10,
+        poolWords: [...allowed].filter((word) => word.length >= LEVELS[level].min && word.length <= LEVELS[level].max).length,
+        distinctTargets: used.size, maxWordShare: Math.round(Math.max(0, ...used.values()) / Math.max(1, valid) * 100) / 100 });
       console.log(`Kontrolleret ${category}/${level}/${profile}: ${valid}/${seeds} gyldige, maks ${Math.round(max)} ms.`);
     }
   }

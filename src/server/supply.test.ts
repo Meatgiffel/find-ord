@@ -43,6 +43,16 @@ describe("baneforsyning", () => {
     expect(PuzzleSupply.key("dyr", "let", true)).not.toBe(PuzzleSupply.key("dyr", "let", false));
   });
 
+  it("vælger den cachede bane, der deler færrest ord med spillerens nylige baner", async () => {
+    const supply = new PuzzleSupply(db, inlineGenerator(), { perKey: 0 });
+    await supply.prepare(["dyr"], "let", false, 3);
+    const cachedPuzzles = (db.prepare("SELECT puzzle FROM puzzle_cache").all() as Array<{ puzzle: string }>).map((row) => JSON.parse(row.puzzle) as Puzzle);
+    const avoid = new Set([...cachedPuzzles[0].words, ...cachedPuzzles[1].words]);
+    const chosen = supply.takeCached("dyr", "let", false, avoid)!;
+    const overlap = (puzzle: Puzzle) => puzzle.words.filter((word) => avoid.has(word)).length;
+    expect(overlap(chosen)).toBe(Math.min(...cachedPuzzles.map(overlap)));
+  });
+
   it("fjerner cachede baner fra ældre versioner og springer ugyldige over", async () => {
     const supply = new PuzzleSupply(db, inlineGenerator(), { perKey: 1 });
     await supply.prepare(["mad"], "normal", false, 1);

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { findWord, makePuzzle, wordAt, type Puzzle } from "./game.js";
 import { blockedFragment, CHILD_POLICY_VERSION } from "./safety.js";
 import { validatePuzzle } from "./validation.js";
-import { CATEGORIES, DIRECTIONS, LEVELS, categoryWords, levelsCoveredBy, type CategoryId, type LevelId } from "./words.js";
+import { CATEGORIES, DIRECTIONS, LEVELS, categoryWords, lemmaKey, levelsCoveredBy, type CategoryId, type LevelId } from "./words.js";
 
 const categories = Object.keys(CATEGORIES) as CategoryId[];
 const levels = Object.keys(LEVELS) as LevelId[];
@@ -72,6 +72,23 @@ describe("egenskaber for banegeneratoren", () => {
     const puzzle = makePuzzle("p", "dyr", "let", 4);
     const other = categories.find((category) => puzzle.words.some((word) => !categoryWords(category).includes(word)))!;
     expect(validatePuzzle({ ...puzzle, category: other })).toBe("Et målord hører ikke til kategorien.");
+  });
+
+  it("bruger højst én bøjning af hvert lemma og undgår nylige ord, når der er alternativer", () => {
+    for (const level of levels) for (let seed = 1; seed <= 30; seed++) {
+      const puzzle = makePuzzle("p", "sport", level, seed);
+      expect(new Set(puzzle.words.map(lemmaKey)).size).toBe(puzzle.words.length);
+    }
+    expect(levelsCoveredBy(["LØB", "LØBE", "HUND", "KAT", "MUS", "GRIS"])).toEqual([]);
+    for (let seed = 1; seed <= 20; seed++) {
+      const recent = new Set(makePuzzle("p", "dyr", "let", seed).words);
+      const next = makePuzzle("q", "dyr", "let", seed + 1000, false, undefined, recent);
+      expect(next.words.filter((word) => recent.has(word))).toEqual([]);
+    }
+    // With almost every word avoided, the generator still fills the board.
+    const fitting = categoryWords("farver").filter((word) => word.length <= LEVELS.let.max);
+    const crowded = makePuzzle("r", "farver", "let", 1, false, undefined, new Set(fitting.slice(3)));
+    expect(crowded.words).toHaveLength(LEVELS.let.words);
   });
 
   it("afviser ulovlige kombinationer før generering og kender små puljers niveauer", () => {

@@ -109,6 +109,11 @@ async function user(req: Request, res: Response): Promise<SessionUser | null> {
 function childFor(userId: string): boolean {
   return Boolean((db.prepare("SELECT child FROM profile WHERE user_id = ?").get(userId) as { child: number } | undefined)?.child);
 }
+// Target words from the player's latest boards, so new boards repeat them as little as possible.
+function recentWords(userId: string, games = 5): Set<string> {
+  const rows = db.prepare("SELECT puzzle FROM game WHERE user_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?").all(userId, games) as Array<{ puzzle: string }>;
+  return new Set(rows.flatMap((row) => (JSON.parse(row.puzzle) as Puzzle).words));
+}
 function serializedGame(row: GameRow) {
   return { puzzle: JSON.parse(row.puzzle) as Puzzle, found: JSON.parse(row.found) as string[], hints: JSON.parse(row.hints) as string[], completed: Boolean(row.completed), abandoned: Boolean(row.abandoned), revision: row.revision };
 }
@@ -184,7 +189,7 @@ app.post("/api/campaigns", async (req, res) => {
     const existing = db.prepare("SELECT id FROM campaign WHERE user_id = ? AND level = ?").get(current.id, parsed.data.level) as { id: string } | undefined;
     const needs = campaignNeeds(db, existing?.id ?? null, current.id, parsed.data.level, child);
     await supply.prepare(needs.categories, parsed.data.level, child, needs.count);
-    res.json(startCampaign(db, current.id, parsed.data.level, child, (category, level, kid) => supply.takeCached(category, level, kid)));
+    res.json(startCampaign(db, current.id, parsed.data.level, child, (category, level, kid) => supply.takeCached(category, level, kid, recentWords(current.id))));
   } catch (cause) { generationError(res, cause, "Kampagnen kunne ikke oprettes. Prøv igen."); }
 });
 app.post("/api/campaigns/:id/refill", async (req, res) => {
@@ -196,7 +201,7 @@ app.post("/api/campaigns/:id/refill", async (req, res) => {
   try {
     const needs = campaignNeeds(db, req.params.id, current.id, campaign.level, child);
     await supply.prepare(needs.categories, campaign.level, child, needs.count);
-    const result = refillCampaign(db, req.params.id, current.id, child, (category, level, kid) => supply.takeCached(category, level, kid));
+    const result = refillCampaign(db, req.params.id, current.id, child, (category, level, kid) => supply.takeCached(category, level, kid, recentWords(current.id)));
     if (!result) return error(res, 404, "Kampagnen blev ikke fundet.");
     res.json(result);
   } catch (cause) { generationError(res, cause, "Nye kampagnebaner kunne ikke hentes. Prøv igen."); }
@@ -233,8 +238,9 @@ app.post("/api/games", async (req, res) => {
   if (!creationAllowed(current.id)) return error(res, 429, CREATION_LIMITED);
   let puzzle: Puzzle;
   const generationStarted = performance.now();
-  const cachedPuzzle = supply.takeCached(category, level, child);
-  try { puzzle = cachedPuzzle ?? await supply.take(category, level, child); }
+  const avoid = recentWords(current.id);
+  const cachedPuzzle = supply.takeCached(category, level, child, avoid);
+  try { puzzle = cachedPuzzle ?? await supply.take(category, level, child, avoid); }
   catch (cause) { return generationError(res, cause, "Banen kunne ikke dannes. Prøv igen."); }
   const stored = db.transaction(() => {
     // A parallel request with the same ID may have finished while this one waited.

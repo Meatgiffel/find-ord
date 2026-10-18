@@ -1,4 +1,4 @@
-import { CATEGORIES, CATEGORY_TAG_VERSION, DIRECTIONS, LEVELS, WORD_LIST_VERSION, availableLevels, categoryWords, type CategoryId, type LevelId } from "./words.js";
+import { CATEGORIES, CATEGORY_TAG_VERSION, DIRECTIONS, LEVELS, WORD_LIST_VERSION, availableLevels, categoryWords, lemmaKey, type CategoryId, type LevelId } from "./words.js";
 import { blockedFragment, CHILD_POLICY_VERSION } from "./safety.js";
 import { VALIDATION_VERSION, validatePuzzle } from "./validation.js";
 
@@ -52,16 +52,20 @@ function shuffle<T>(items: T[], next: () => number): T[] {
 const LETTERS = "AAAAAAAEEEEEEEEEIIIIINNNNNNRRRRRRSSSSSTTTTTDDDDLLLKKKMMMOOOØØÆÅBBBFFGGHHJPUVY";
 
 // pool replaces the category list in tests; the result must still pass validatePuzzle.
-export function makePuzzle(id: string, category: CategoryId, level: LevelId, seed: number, child = false, pool?: readonly string[]): Puzzle {
+// Words in avoid (e.g. from the player's recent boards) are only used when needed.
+export function makePuzzle(id: string, category: CategoryId, level: LevelId, seed: number, child = false, pool?: readonly string[], avoid?: ReadonlySet<string>): Puzzle {
   if (!Object.hasOwn(CATEGORIES, category) || !Object.hasOwn(LEVELS, level) || (!pool && !availableLevels(category, child).includes(level))) throw new Error("Kategorien har ikke nok ord til niveauet.");
   const setting = LEVELS[level];
   const next = random(seed);
   for (let layoutAttempt = 0; layoutAttempt < 30; layoutAttempt++) {
-    const candidates = shuffle([...(pool ?? categoryWords(category, child))]
+    const shuffled = shuffle([...(pool ?? categoryWords(category, child))]
       .filter((word) => word.length >= setting.min && word.length <= setting.max), next);
+    const candidates = avoid?.size ? [...shuffled.filter((word) => !avoid.has(word)), ...shuffled.filter((word) => avoid.has(word))] : shuffled;
+    const lemmas = new Set<string>();
     const grid = Array.from({ length: setting.size }, () => Array<string>(setting.size).fill(""));
     const chosen: string[] = [];
     for (const word of candidates) {
+      if (lemmas.has(lemmaKey(word))) continue;
       const positions = shuffle(
         Array.from({ length: setting.size * setting.size * setting.directions }, (_, index) => {
           const direction = DIRECTIONS[index % setting.directions];
@@ -81,6 +85,7 @@ export function makePuzzle(id: string, category: CategoryId, level: LevelId, see
         if (!fits) continue;
         for (let i = 0; i < word.length; i++) grid[p.row + p.dr * i][p.col + p.dc * i] = word[i];
         chosen.push(word);
+        lemmas.add(lemmaKey(word));
         break;
       }
       if (chosen.length === setting.words) break;
