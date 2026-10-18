@@ -125,7 +125,7 @@ Ved opdatering: tag backup, kør `docker compose up -d --build`, og behold volum
 - **Verificeret:** Docker 29 på linux/amd64, både på Fedora 44 og på en Debian 13-VM (docker-01: 4 vCPU, 7,8 GiB RAM). Det er referencehardwaren i [drift og kapacitet](docs/drift-og-kapacitet.md). En frisk installation, opgradering, backup og restore er gennemført efter denne vejledning. Browsertest er lavet i Chromium på telefon- og desktopbredde.
 - **Ikke verificeret endnu:** linux/arm64 og fysiske iPhone-, iPad- og Android-enheder. De testes i [TEA-48](https://linear.app/team-vre/issue/TEA-48).
 - **Afhængigheder:** Node.js 22, Svelte 5.57, Vite 7.3, vite-plugin-pwa 2.0 (Workbox), Dexie 4.4, Better Auth 1.7.10, Express 4, better-sqlite3 12 og zod 4. Præcise versioner står i `package.json` og `package-lock.json`. Ejeren af installationen opdaterer afhængigheder. Det sker med `npm update` eller en målrettet opgradering efterfulgt af alle checks ovenfor. Better Auth og Dexie er låst til en bestemt version, fordi de ejer sessions- og lokalskemaer. Læs deres ændringslog før en opgradering.
-- **Udgivelse:** En version mærkes med et git-tag (fx `v1.0.0`), når alle checks i CI er grønne, og releasechecket i [TEA-40](https://linear.app/team-vre/issue/TEA-40) er gennemført, herunder test på fysiske enheder.
+- **Udgivelse:** Ændringer pr. version står i [CHANGELOG.md](CHANGELOG.md). En version mærkes med et git-tag (fx `v1.0.0`), når alle checks i CI er grønne, og releasechecket i [TEA-40](https://linear.app/team-vre/issue/TEA-40) er gennemført, herunder test på fysiske enheder.
 
 ## Ordgrundlag
 

@@ -2,7 +2,7 @@ import express, { type Request, type Response } from "express";
 import { toNodeHandler, fromNodeHeaders } from "better-auth/node";
 import { getMigrations } from "better-auth/db/migration";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { z } from "zod";
 import { auth, authForHost, baseURL, CLIENT_IP_HEADER, lanAuth, trustedOrigins } from "./auth.js";
@@ -32,7 +32,7 @@ try {
   log("error", "startup-failed", { error: cause instanceof Error ? cause.message : String(cause), code: (cause as { code?: string })?.code });
   process.exit(1);
 }
-const versions = { words: WORD_LIST_VERSION, categories: CATEGORY_TAG_VERSION, childPolicy: CHILD_POLICY_VERSION, validation: VALIDATION_VERSION, cor: COR_VERSION, schema: LATEST_MIGRATION };
+const versions = { app: (JSON.parse(readFileSync(resolve("package.json"), "utf8")) as { version: string }).version, words: WORD_LIST_VERSION, categories: CATEGORY_TAG_VERSION, childPolicy: CHILD_POLICY_VERSION, validation: VALIDATION_VERSION, cor: COR_VERSION, schema: LATEST_MIGRATION };
 log("info", "startup", { versions, corForms: corpus.imported });
 // Puzzles are generated in a worker thread and a few are kept ready per combination.
 const supply = new PuzzleSupply(db, workerGenerator(Number(process.env.GENERATION_TIMEOUT_MS || 3000)), {

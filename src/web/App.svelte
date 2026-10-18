@@ -60,7 +60,7 @@
   let changingPassword = false;
   let showAccounts = false;
   type WordAdmin = {
-    versions: { words: number; categories: number; childPolicy: number; validation: number; cor: string };
+    versions: { app: string; words: number; categories: number; childPolicy: number; validation: number; cor: string };
     blockedSequences: number;
     coverage: Array<{ category: CategoryId; name: string; levels: Record<string, { adult: number; child: number; needed: number; adultOpen: boolean; childOpen: boolean }> }>;
     words: Array<{ word: string; category: CategoryId; child: boolean; reason: string | null; readingLevel: number; sources: string[] }>;
@@ -1005,7 +1005,7 @@
         </details>
         <details class="card secondary-panel" ontoggle={(event) => { if ((event.currentTarget as HTMLDetailsElement).open && !wordAdmin) void loadWordAdmin(); }}><summary>Ordlister</summary>
           {#if wordAdmin}
-            <p class="muted">Ordliste v{wordAdmin.versions.words} · kategorier v{wordAdmin.versions.categories} · børnepolitik v{wordAdmin.versions.childPolicy} · validering v{wordAdmin.versions.validation} · COR {wordAdmin.versions.cor} · {wordAdmin.blockedSequences} blokerede sekvenser. Listerne ændres i koden efter den redaktionelle procedure i <code>docs/ordindhold.md</code>; git er historikken, og rollback sker med en tidligere udgave.</p>
+            <p class="muted">Find ord {wordAdmin.versions.app} · ordliste v{wordAdmin.versions.words} · kategorier v{wordAdmin.versions.categories} · børnepolitik v{wordAdmin.versions.childPolicy} · validering v{wordAdmin.versions.validation} · COR {wordAdmin.versions.cor} · {wordAdmin.blockedSequences} blokerede sekvenser. Listerne ændres i koden efter den redaktionelle procedure i <code>docs/ordindhold.md</code>; git er historikken, og rollback sker med en tidligere udgave.</p>
             <!-- A scrollable region must be reachable by keyboard (axe: scrollable-region-focusable). -->
             <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
             <div class="table-scroll" tabindex="0" role="region" aria-label="Dækning pr. kategori og niveau"><table class="coverage-table"><caption>Dækning: ord med niveauets længde, voksen / barn</caption>
