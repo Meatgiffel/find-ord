@@ -1,7 +1,6 @@
 import express, { type Request, type Response } from "express";
 import { toNodeHandler, fromNodeHeaders } from "better-auth/node";
 import { getMigrations } from "better-auth/db/migration";
-import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { z } from "zod";
@@ -10,10 +9,11 @@ import { dataFile, db, migrateGameData } from "./database.js";
 import { finishSetup, prepareSetupToken, setupNeeded, setupTokenMatches } from "./setup.js";
 import { importBundledCor } from "./lexicon.js";
 import { achievementsForUser, statsForUser } from "./achievements.js";
-import { campaignsForUser, refillCampaign, startCampaign } from "./campaigns.js";
+import { campaignNeeds, campaignsForUser, refillCampaign, startCampaign } from "./campaigns.js";
+import { PuzzleSupply, SupplyBusyError, workerGenerator } from "./supply.js";
 import { applyGameEvents, loadGameForUser, type GameRow } from "./game-sync.js";
 import { AVATARS, CATEGORIES, CATEGORY_TAG_VERSION, WORD_LIST_VERSION, availableLevels, campaignLevels, type CategoryId, type LevelId } from "../shared/words.js";
-import { makePuzzle, type Move, type Puzzle } from "../shared/game.js";
+import type { Move, Puzzle } from "../shared/game.js";
 import { VALIDATION_VERSION, validatePuzzle } from "../shared/validation.js";
 import { CHILD_POLICY_VERSION } from "../shared/safety.js";
 
@@ -23,6 +23,12 @@ const corpus = await importBundledCor(db);
 // LOG_LEVEL=error keeps only failures; the default "info" also logs startup and shutdown.
 const logInfo = process.env.LOG_LEVEL === "error" ? () => {} : (text: string) => console.log(text);
 logInfo(`COR ${corpus.imported} ordformer indlæst.`);
+// Puzzles are generated in a worker thread and a few are kept ready per combination.
+const supply = new PuzzleSupply(db, workerGenerator(Number(process.env.GENERATION_TIMEOUT_MS || 5000)), {
+  queueLimit: Number(process.env.GENERATION_QUEUE_LIMIT || 8), maxCached: Number(process.env.PUZZLE_CACHE_LIMIT || 300)
+});
+const pruned = supply.prune();
+if (pruned) logInfo(`${pruned} cachede baner fra en ældre ordliste eller politik er fjernet.`);
 const setupToken = prepareSetupToken(db, dataFile);
 if (setupToken) console.log(`Ingen konti endnu. Opret første administrator på ${baseURL}/?opsaetning=${setupToken}`);
 
@@ -120,34 +126,72 @@ app.post("/api/campaigns", async (req, res) => {
   if (!parsed.success) return error(res, 400, "Vælg en gyldig sværhedsgrad.");
   if (!campaignLevels(childFor(current.id)).includes(parsed.data.level)) return error(res, 400, "Dette niveau er endnu ikke tilgængeligt i kampagner.");
   if (!creationAllowed(current.id)) return error(res, 429, CREATION_LIMITED);
-  try { res.json(startCampaign(db, current.id, parsed.data.level, childFor(current.id))); }
-  catch { error(res, 503, "Kampagnen kunne ikke oprettes. Prøv igen."); }
+  const child = childFor(current.id);
+  try {
+    const existing = db.prepare("SELECT id FROM campaign WHERE user_id = ? AND level = ?").get(current.id, parsed.data.level) as { id: string } | undefined;
+    const needs = campaignNeeds(db, existing?.id ?? null, current.id, parsed.data.level, child);
+    await supply.prepare(needs.categories, parsed.data.level, child, needs.count);
+    res.json(startCampaign(db, current.id, parsed.data.level, child, (category, level, kid) => supply.takeCached(category, level, kid)));
+  } catch (cause) { generationError(res, cause, "Kampagnen kunne ikke oprettes. Prøv igen."); }
 });
 app.post("/api/campaigns/:id/refill", async (req, res) => {
   const current = await user(req, res); if (!current) return;
   if (!creationAllowed(current.id)) return error(res, 429, CREATION_LIMITED);
+  const child = childFor(current.id);
+  const campaign = db.prepare("SELECT level FROM campaign WHERE id = ? AND user_id = ?").get(req.params.id, current.id) as { level: LevelId } | undefined;
+  if (!campaign) return error(res, 404, "Kampagnen blev ikke fundet.");
   try {
-    const result = refillCampaign(db, req.params.id, current.id, childFor(current.id));
+    const needs = campaignNeeds(db, req.params.id, current.id, campaign.level, child);
+    await supply.prepare(needs.categories, campaign.level, child, needs.count);
+    const result = refillCampaign(db, req.params.id, current.id, child, (category, level, kid) => supply.takeCached(category, level, kid));
     if (!result) return error(res, 404, "Kampagnen blev ikke fundet.");
     res.json(result);
-  } catch { error(res, 503, "Nye kampagnebaner kunne ikke hentes. Prøv igen."); }
+  } catch (cause) { generationError(res, cause, "Nye kampagnebaner kunne ikke hentes. Prøv igen."); }
 });
 
-const newGameSchema = z.object({ category: z.enum(Object.keys(CATEGORIES) as [CategoryId, ...CategoryId[]]), level: z.enum(["let", "normal", "svaer", "ekspert"]) });
+// A full queue or a generation timeout is reported with Retry-After, so the client can explain it.
+function generationError(res: Response, cause: unknown, fallback: string) {
+  if (cause instanceof SupplyBusyError) { res.setHeader("Retry-After", "5"); return error(res, 503, cause.message); }
+  console.error("Banegenerering fejlede:", cause instanceof Error ? cause.message : cause);
+  res.setHeader("Retry-After", "2");
+  error(res, 503, fallback);
+}
+
+const newGameSchema = z.object({
+  category: z.enum(Object.keys(CATEGORIES) as [CategoryId, ...CategoryId[]]), level: z.enum(["let", "normal", "svaer", "ekspert"]),
+  requestId: z.string().uuid().optional()
+});
 app.post("/api/games", async (req, res) => {
   const current = await user(req, res); if (!current) return;
   const input = newGameSchema.safeParse(req.body);
   if (!input.success) return error(res, 400, "Vælg en gyldig kategori og sværhedsgrad.");
-  const { category, level } = input.data;
-  if (!availableLevels(category, childFor(current.id)).includes(level as LevelId)) return error(res, 400, "Dette niveau er endnu ikke tilgængeligt i kategorien.");
+  const { category, level, requestId } = input.data;
+  // The same request ID with the same choices returns the game it created; other choices are refused.
+  const params = JSON.stringify({ category, level });
+  const repeated = () => requestId ? db.prepare("SELECT params, game_id FROM game_request WHERE user_id = ? AND request_id = ?").get(current.id, requestId) as { params: string; game_id: string } | undefined : undefined;
+  const earlier = repeated();
+  if (earlier) {
+    if (earlier.params !== params) return error(res, 409, "Forespørgslen er allerede brugt til en anden bane.");
+    const game = loadGameForUser(db, earlier.game_id, current.id);
+    return game ? res.json(serializedGame(game)) : error(res, 410, "Banen fra forespørgslen findes ikke længere.");
+  }
+  const child = childFor(current.id);
+  if (!availableLevels(category, child).includes(level as LevelId)) return error(res, 400, "Dette niveau er endnu ikke tilgængeligt i kategorien.");
   if (!creationAllowed(current.id)) return error(res, 429, CREATION_LIMITED);
-  const id = randomUUID();
   let puzzle: Puzzle;
-  try { puzzle = makePuzzle(id, category, level, randomBytes(4).readUInt32BE(), childFor(current.id)); }
-  catch { return error(res, 503, "Banen kunne ikke dannes. Prøv igen."); }
-  if (validatePuzzle(puzzle)) return error(res, 503, "Banen kunne ikke valideres. Prøv igen.");
-  db.prepare("INSERT INTO game (id, user_id, category, level, puzzle) VALUES (?, ?, ?, ?, ?)")
-    .run(id, current.id, category, level, JSON.stringify(puzzle));
+  try { puzzle = await supply.take(category, level, child); }
+  catch (cause) { return generationError(res, cause, "Banen kunne ikke dannes. Prøv igen."); }
+  const stored = db.transaction(() => {
+    // A parallel request with the same ID may have finished while this one waited.
+    const raced = repeated();
+    if (raced) return raced.params === params ? raced.game_id : null;
+    db.prepare("INSERT INTO game (id, user_id, category, level, puzzle) VALUES (?, ?, ?, ?, ?)")
+      .run(puzzle.id, current.id, category, level, JSON.stringify(puzzle));
+    if (requestId) db.prepare("INSERT INTO game_request (user_id, request_id, params, game_id) VALUES (?, ?, ?, ?)").run(current.id, requestId, params, puzzle.id);
+    return puzzle.id;
+  })();
+  if (stored === null) return error(res, 409, "Forespørgslen er allerede brugt til en anden bane.");
+  if (stored !== puzzle.id) { const game = loadGameForUser(db, stored, current.id); return game ? res.json(serializedGame(game)) : error(res, 410, "Banen fra forespørgslen findes ikke længere."); }
   res.status(201).json({ puzzle, found: [], hints: [], completed: false, abandoned: false, revision: 0 });
 });
 
@@ -310,8 +354,10 @@ function shutdown(signal: string) {
   logInfo(`${signal} modtaget; lukker ned.`);
   setTimeout(() => process.exit(1), 10_000).unref();
   server.close(() => {
-    db.close();
-    process.exit(0);
+    void supply.close().finally(() => {
+      db.close();
+      process.exit(0);
+    });
   });
   server.closeIdleConnections();
 }

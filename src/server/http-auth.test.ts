@@ -92,6 +92,19 @@ describe("HTTP-adgangskontrol", () => {
         method: "POST", headers: { Origin: baseURL, Cookie: bob, "Content-Type": "application/json" },
         body: JSON.stringify({ events: [] })
       })).status).toBe(404);
+      // A repeated request ID returns the same game; other choices under that ID are refused.
+      const requestId = "00000000-0000-4000-8000-0000000000aa";
+      const bobCreate = (category: string) => fetch(`${baseURL}/api/games`, {
+        method: "POST", headers: { Origin: baseURL, Cookie: bob, "Content-Type": "application/json" },
+        body: JSON.stringify({ category, level: "let", requestId })
+      });
+      const firstTry = await bobCreate("mad");
+      expect(firstTry.status).toBe(201);
+      const retried = await bobCreate("mad");
+      expect(retried.status).toBe(200);
+      expect((await retried.json() as { puzzle: { id: string } }).puzzle.id).toBe((await firstTry.json() as { puzzle: { id: string } }).puzzle.id);
+      expect((await bobCreate("dyr")).status).toBe(409);
+      expect(await listed(bob)).toHaveLength(1);
       // GAME_CREATION_LIMIT=2: alice already created one game.
       const createAgain = () => fetch(`${baseURL}/api/games`, {
         method: "POST", headers: { Origin: baseURL, Cookie: alice, "Content-Type": "application/json" },

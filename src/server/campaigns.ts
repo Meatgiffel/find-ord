@@ -43,12 +43,25 @@ function bundle(db: Database.Database, campaign: CampaignRow, child: boolean): C
   return { id: campaign.id, level: campaign.level, games };
 }
 
+// How many puzzles a refill would add and from which categories, so they can be
+// prepared outside the refill transaction.
+export function campaignNeeds(db: Database.Database, campaignId: string | null, userId: string, level: LevelId, child: boolean): { count: number; categories: CategoryId[] } {
+  const categories = (Object.keys(CATEGORIES) as CategoryId[]).filter((category) => availableLevels(category, child).includes(level));
+  if (!campaignId) return { count: QUEUE_SIZE, categories };
+  const waiting = queueRows(db, campaignId).filter((row) => current(row, level, child)).length;
+  return { count: Math.max(0, QUEUE_SIZE - waiting), categories };
+}
+
 export function campaignsForUser(db: Database.Database, userId: string, child: boolean): CampaignBundle[] {
   const rows = db.prepare("SELECT id, user_id, level FROM campaign WHERE user_id = ? ORDER BY created_at, id").all(userId) as CampaignRow[];
   return rows.map((row) => bundle(db, row, child));
 }
 
-export function refillCampaign(db: Database.Database, campaignId: string, userId: string, child: boolean): CampaignBundle | null {
+// next supplies a ready puzzle for a category (from the cache); without one, or when it
+// has none, the puzzle is generated here.
+export type PuzzleSource = (category: CategoryId, level: LevelId, child: boolean) => Puzzle | null;
+
+export function refillCampaign(db: Database.Database, campaignId: string, userId: string, child: boolean, next?: PuzzleSource): CampaignBundle | null {
   return db.transaction(() => {
     const campaign = db.prepare("SELECT id, user_id, level FROM campaign WHERE id = ? AND user_id = ?").get(campaignId, userId) as CampaignRow | undefined;
     if (!campaign) return null;
@@ -69,6 +82,8 @@ export function refillCampaign(db: Database.Database, campaignId: string, userId
       while (remaining.length && !puzzle) {
         const index = randomInt(remaining.length);
         const category = remaining.splice(index, 1)[0];
+        const ready = next?.(category, campaign.level, child);
+        if (ready && validatePuzzle(ready) === null) { puzzle = ready; break; }
         for (let attempt = 0; attempt < 3; attempt++) {
           try {
             const made = makePuzzle(randomUUID(), category, campaign.level, randomBytes(4).readUInt32BE(), child);
@@ -89,7 +104,7 @@ export function refillCampaign(db: Database.Database, campaignId: string, userId
   })();
 }
 
-export function startCampaign(db: Database.Database, userId: string, level: LevelId, child: boolean): CampaignBundle {
+export function startCampaign(db: Database.Database, userId: string, level: LevelId, child: boolean, next?: PuzzleSource): CampaignBundle {
   const id = db.transaction(() => {
     const existing = db.prepare("SELECT id FROM campaign WHERE user_id = ? AND level = ?").get(userId, level) as { id: string } | undefined;
     if (existing) return existing.id;
@@ -97,7 +112,7 @@ export function startCampaign(db: Database.Database, userId: string, level: Leve
     db.prepare("INSERT INTO campaign (id, user_id, level) VALUES (?, ?, ?)").run(created, userId, level);
     return created;
   })();
-  const result = refillCampaign(db, id, userId, child);
+  const result = refillCampaign(db, id, userId, child, next);
   if (!result) throw new Error("Kampagnen kunne ikke findes.");
   return result;
 }

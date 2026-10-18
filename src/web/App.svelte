@@ -294,6 +294,9 @@
     message = "Log ind igen for at synkronisere dine gemte spil.";
   }
 
+  // Reused until the game is saved, so retrying after a lost response returns the same game.
+  let gameRequest: { key: string; id: string } | null = null;
+
   async function startGame(requestedCategory: CategoryId | "surprise" = category, chosenLevel: LevelId = level) {
     if (!identity || !online) { message = "Opret nye baner, når der er forbindelse til serveren."; return; }
     const chosenCategory = requestedCategory === "surprise" ? surpriseCategory(chosenLevel, Math.random, childProfile) : requestedCategory;
@@ -305,8 +308,11 @@
         message = `Der er allerede ${MAX_OFFLINE_GAMES} hentede baner på enheden. Gennemfør eller opgiv nogle af dem, før du henter flere.`;
         return;
       }
-      const game = await api("/games", { method: "POST", body: JSON.stringify({ category: chosenCategory, level: chosenLevel }) });
+      const key = `${identity.id}|${chosenCategory}|${chosenLevel}`;
+      if (gameRequest?.key !== key) gameRequest = { key, id: newMoveId() };
+      const game = await api("/games", { method: "POST", body: JSON.stringify({ category: chosenCategory, level: chosenLevel, requestId: gameRequest.id }) });
       await saveGame(identity.id, game);
+      gameRequest = null;
       storagePersisted = await requestPersistentStorage();
       await refreshLocal();
       active = games.find((item) => item.id === game.puzzle.id) ?? null;

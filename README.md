@@ -33,7 +33,7 @@ docker compose exec find-ord npm run reset-admin
 
 Kommandoen spørger interaktivt om brugernavn og ny adgangskode, giver kontoen administratorrolle og logger den ud alle steder. Bootstrap kan kun bruges, når databasen er tom.
 
-Valgfrit kan `LOG_LEVEL=error` begrænse loggen til fejl, og `GAME_CREATION_LIMIT` (standard 60) styrer, hvor mange nye baner og kampagnepåfyldninger én konto kan hente pr. 10 minutter. Containeren lukker SQLite pænt ned ved `docker compose stop`. Imaget er afprøvet på linux/amd64; linux/arm64 er endnu ikke verificeret.
+Valgfrit kan `LOG_LEVEL=error` begrænse loggen til fejl, og `GAME_CREATION_LIMIT` (standard 60) styrer, hvor mange nye baner og kampagnepåfyldninger én konto kan hente pr. 10 minutter. Baner dannes i en worker-tråd og holdes klar i en lille cache. `GENERATION_QUEUE_LIMIT` (standard 8), `GENERATION_TIMEOUT_MS` (5000) og `PUZZLE_CACHE_LIMIT` (300) sætter grænser for kø, tid pr. bane og antal cachede baner. Containeren lukker SQLite pænt ned ved `docker compose stop`. Imaget er afprøvet på linux/amd64; linux/arm64 er endnu ikke verificeret.
 
 Compose gemmer SQLite-database og en lokalt genereret authentication-hemmelighed i volumet `find-ord-data`. Bevar begge dele ved opgradering og backup. Servicen er tænkt til en betroet lokal installation; offentlig interneteksponering er ikke gennemgået.
 

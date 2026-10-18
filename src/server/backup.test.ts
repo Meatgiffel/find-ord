@@ -4,7 +4,7 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createBackup, restoreBackup } from "./backup.js";
-import { migrateGameData } from "./migrations.js";
+import { LATEST_MIGRATION, migrateGameData } from "./migrations.js";
 
 let root: string;
 const live = () => join(root, "live", "find-ord.sqlite");
@@ -47,7 +47,7 @@ describe("backup og restore", () => {
     db.close();
     expect(folder.endsWith("find-ord-backup-20261018-120000")).toBe(true);
     const manifest = JSON.parse(readFileSync(join(folder, "manifest.json"), "utf8"));
-    expect(manifest).toMatchObject({ format: 1, schemaVersion: 7, counts: { users: 1, games: 1, events: 1 } });
+    expect(manifest).toMatchObject({ format: 1, schemaVersion: LATEST_MIGRATION, counts: { users: 1, games: 1, events: 1 } });
     expect(statSync(join(folder, "find-ord.sqlite")).mode & 0o777).toBe(0o600);
 
     const restored = join(root, "new", "find-ord.sqlite");

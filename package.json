@@ -14,7 +14,7 @@
     "start": "node dist/server/index.js",
     "check": "svelte-check --tsconfig ./tsconfig.json && tsc --noEmit -p tsconfig.server.json",
     "lint": "eslint src scripts vite.config.ts svelte.config.js",
-    "test": "vitest run src/shared src/web src/server/migrations.test.ts src/server/campaigns.test.ts src/server/game-sync.test.ts src/server/http-auth.test.ts src/server/backup.test.ts src/server/achievements.test.ts src/server/setup-http.test.ts src/server/lexicon.test.ts",
+    "test": "vitest run src/shared src/web src/server/migrations.test.ts src/server/campaigns.test.ts src/server/game-sync.test.ts src/server/http-auth.test.ts src/server/backup.test.ts src/server/achievements.test.ts src/server/setup-http.test.ts src/server/lexicon.test.ts src/server/supply.test.ts",
     "test:generator": "tsx scripts/validate-generator.ts",
     "report:words": "tsx scripts/word-report.ts",
     "import:words": "tsx scripts/import-words.ts",

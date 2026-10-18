@@ -126,6 +126,30 @@ const migrations: Migration[] = [
         ALTER TABLE profile ADD COLUMN policy_version INTEGER NOT NULL DEFAULT 1;
       `);
     }
+  },
+  {
+    version: 8,
+    apply(db) {
+      // Ready, validated puzzles waiting for a player, and client request IDs for new
+      // games so a repeated request returns the same game.
+      db.exec(`
+        CREATE TABLE puzzle_cache (
+          id TEXT PRIMARY KEY,
+          cache_key TEXT NOT NULL,
+          puzzle TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX puzzle_cache_key ON puzzle_cache (cache_key, created_at);
+        CREATE TABLE game_request (
+          user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+          request_id TEXT NOT NULL,
+          params TEXT NOT NULL,
+          game_id TEXT NOT NULL REFERENCES game(id) ON DELETE CASCADE,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (user_id, request_id)
+        );
+      `);
+    }
   }
 ];
 
