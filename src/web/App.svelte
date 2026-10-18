@@ -48,6 +48,9 @@
   let newName = "";
   let newPassword = "";
   let newChild = false;
+  let setupNeeded = false;
+  let setupToken = new URLSearchParams(location.search).get("opsaetning") ?? "";
+  let setupName = "";
   let currentPassword = "";
   let nextPassword = "";
   let changingPassword = false;
@@ -219,7 +222,23 @@
         else await refreshLocal();
       }
     } catch (cause) { message = cause instanceof Error ? cause.message : "Lokal lagring er ikke tilgængelig."; }
-    finally { loading = false; }
+    finally {
+      if (!identity && navigator.onLine) {
+        try { setupNeeded = (await api("/setup") as { needed: boolean }).needed; } catch { setupNeeded = false; }
+      }
+      loading = false;
+    }
+  }
+
+  async function createFirstAdmin() {
+    busy = true; message = "";
+    try {
+      await api("/setup", { method: "POST", body: JSON.stringify({ token: setupToken.trim(), username, name: setupName, password }) });
+      setupNeeded = false;
+      history.replaceState(null, "", location.pathname);
+      await signIn();
+    } catch (cause) { message = cause instanceof Error ? cause.message : "Administratoren kunne ikke oprettes."; }
+    finally { busy = false; }
   }
 
   async function signIn() {
@@ -786,6 +805,20 @@
   {#if loading}
     <section class="card center"><h1>Finder dine baner…</h1></section>
   {:else if !identity}
+    {#if setupNeeded}
+    <section class="login card">
+      <div class="eyebrow">NY INSTALLATION</div><h1>Opret første administrator</h1>
+      <p>Administratoren opretter derefter konti til de andre spillere.</p>
+      <form onsubmit={(event) => { event.preventDefault(); void createFirstAdmin(); }}>
+        <label>Opsætningskode<input bind:value={setupToken} autocomplete="off" required /></label>
+        {#if !setupToken}<p class="muted">Koden står i serverens log, fx med <code>docker compose logs find-ord</code>.</p>{/if}
+        <label>Brugernavn<input autocomplete="username" bind:value={username} pattern={"[A-Za-z0-9_.-]{3,30}"} required /></label>
+        <label>Visningsnavn<input bind:value={setupName} maxlength="80" required /></label>
+        <label>Adgangskode<input type="password" autocomplete="new-password" minlength="8" bind:value={password} required /></label>
+        <button class="primary" disabled={busy || !online} type="submit">{busy ? "Opretter…" : "Opret administrator"}</button>
+      </form>
+    </section>
+    {:else}
     <section class="login card">
       <div class="eyebrow">VELKOMMEN</div><h1>Find ord.<br /><em>Find ro.</em></h1>
       <p>Vælg en kategori, find ordene og tag spillet med dig offline.</p>
@@ -794,8 +827,9 @@
         <label>Adgangskode<input type="password" autocomplete="current-password" bind:value={password} required /></label>
         <button class="primary" disabled={busy || !online} type="submit">{busy ? "Logger ind…" : "Log ind"}</button>
       </form>
-      <p class="muted">Første administrator oprettes på serveren. Derefter kan administrator oprette flere konti.</p>
+      <p class="muted">Konti oprettes af en administrator.</p>
     </section>
+    {/if}
   {:else}
     {#if !active}
       {#if $updateReady}<div class="update-banner" role="status"><span>En ny version af Find ord er klar.</span><button class="secondary" onclick={() => void applyUpdate()} disabled={markingWord}>Opdatér</button></div>{/if}

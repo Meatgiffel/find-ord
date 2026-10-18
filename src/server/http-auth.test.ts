@@ -1,37 +1,12 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { once } from "node:events";
 import { describe, expect, it } from "vitest";
 import Database from "better-sqlite3";
 import { findWord, type Puzzle } from "../shared/game.js";
-
-async function freePort(): Promise<number> {
-  const server = createServer();
-  server.listen(0, "127.0.0.1");
-  await once(server, "listening");
-  const address = server.address();
-  if (!address || typeof address === "string") throw new Error("Ingen testport.");
-  const port = address.port;
-  const closed = once(server, "close");
-  server.close();
-  await closed;
-  return port;
-}
-
-async function ready(baseURL: string, child: ChildProcess): Promise<void> {
-  for (let attempt = 0; attempt < 100; attempt++) {
-    if (child.exitCode !== null) throw new Error(`Testserveren stoppede med kode ${child.exitCode}.`);
-    try {
-      const response = await fetch(`${baseURL}/api/health`);
-      if (response.ok) return;
-    } catch { /* Serveren starter stadig. */ }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw new Error("Testserveren blev ikke klar.");
-}
+import { freePort, ready } from "./test-server.js";
 
 describe("HTTP-adgangskontrol", () => {
   it("afviser offentlig oprettelse, fremmede baner og requests uden gyldig origin", async () => {

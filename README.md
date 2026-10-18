@@ -20,10 +20,10 @@ Du skal bruge Docker med Compose. Kopiér [.env.example](.env.example) til `.env
 ```sh
 cp .env.example .env
 docker compose up -d --build
-docker compose exec find-ord npm run bootstrap
+docker compose logs find-ord
 ```
 
-Åbn adressen i `BASE_URL`. Bootstrap beder interaktivt om brugernavn, visningsnavn og adgangskode til den første administrator; der findes ingen standardkonto. Administratoren kan derefter oprette separate voksen- og børnekonti i appen, skifte en konto mellem børne- og voksenprofil (kræver administratorens adgangskode og logger kontoen ud) samt deaktivere og genaktivere konti. Hver spiller kan selv ændre visningsnavn, avatar og adgangskode under “Min konto”. Administratoren kan nulstille en spillers adgangskode og slette konti; begge dele logger kontoen ud, og sletning fjerner kontoens spil, statistik og achievements, men ikke andres data. Den sidste administrator kan ikke slettes eller degraderes.
+Ved første start har databasen ingen konti. Serverens log viser da et engangslink, `…/?opsaetning=<kode>`; åbn det, og opret den første administrator i appen. Koden ligger kun i datamappen og i loggen, virker én gang og slettes, når administratoren er oprettet; der findes ingen standardkonto. Alternativt kan administratoren oprettes i terminalen med `docker compose exec find-ord npm run bootstrap`. Administratoren kan derefter oprette separate voksen- og børnekonti i appen, skifte en konto mellem børne- og voksenprofil (kræver administratorens adgangskode og logger kontoen ud) samt deaktivere og genaktivere konti. Hver spiller kan selv ændre visningsnavn, avatar og adgangskode under “Min konto”. Administratoren kan nulstille en spillers adgangskode og slette konti; begge dele logger kontoen ud, og sletning fjerner kontoens spil, statistik og achievements, men ikke andres data. Den sidste administrator kan ikke slettes eller degraderes.
 
 Har ingen længere administratoradgang, kan ejeren af Docker-værten gendanne den for en eksisterende voksenkonto:
 

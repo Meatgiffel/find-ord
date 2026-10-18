@@ -2,7 +2,8 @@ import { stdin, stdout } from "node:process";
 import { input, password as passwordPrompt } from "@inquirer/prompts";
 import { getMigrations } from "better-auth/db/migration";
 import { auth } from "../src/server/auth.js";
-import { db, migrateGameData } from "../src/server/database.js";
+import { dataFile, db, migrateGameData } from "../src/server/database.js";
+import { finishSetup } from "../src/server/setup.js";
 
 await (await getMigrations(auth.options)).runMigrations();
 migrateGameData(db);
@@ -17,4 +18,5 @@ const created = await auth.api.signUpEmail({ body: { email: `${username.toLowerC
 if (!created.user) throw new Error("Administrator kunne ikke oprettes.");
 db.prepare("UPDATE user SET role = 'admin' WHERE id = ?").run(created.user.id);
 db.prepare("INSERT INTO profile (user_id, child) VALUES (?, 0)").run(created.user.id);
+finishSetup(dataFile);
 stdout.write("Administrator oprettet.\n");

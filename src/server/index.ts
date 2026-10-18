@@ -5,8 +5,9 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { z } from "zod";
-import { auth, authForHost, CLIENT_IP_HEADER, lanAuth, trustedOrigins } from "./auth.js";
-import { db, migrateGameData } from "./database.js";
+import { auth, authForHost, baseURL, CLIENT_IP_HEADER, lanAuth, trustedOrigins } from "./auth.js";
+import { dataFile, db, migrateGameData } from "./database.js";
+import { finishSetup, prepareSetupToken, setupNeeded, setupTokenMatches } from "./setup.js";
 import { importBundledCor } from "./lexicon.js";
 import { achievementsForUser, statsForUser } from "./achievements.js";
 import { campaignsForUser, refillCampaign, startCampaign } from "./campaigns.js";
@@ -22,6 +23,8 @@ const corpus = await importBundledCor();
 // LOG_LEVEL=error keeps only failures; the default "info" also logs startup and shutdown.
 const logInfo = process.env.LOG_LEVEL === "error" ? () => {} : (text: string) => console.log(text);
 logInfo(`COR ${corpus.imported} ordformer indlæst.`);
+const setupToken = prepareSetupToken(db, dataFile);
+if (setupToken) console.log(`Ingen konti endnu. Opret første administrator på ${baseURL}/?opsaetning=${setupToken}`);
 
 // Each new game or campaign refill generates puzzles on this process. Limit how many
 // one account can request, so a single client cannot keep the server busy.
@@ -189,6 +192,37 @@ app.post("/api/games/:id/sync", async (req, res) => {
   } catch (cause) {
     return error(res, 409, cause instanceof Error ? cause.message : "Synkronisering mislykkedes.");
   }
+});
+
+app.get("/api/setup", (_req, res) => res.json({ needed: setupNeeded(db) }));
+
+// Creates the first administrator once, with the one-time token from the server log.
+let setupRunning = false;
+const setupSchema = z.object({ token: z.string(), username: z.string().regex(/^[a-zA-Z0-9_.-]{3,30}$/), name: z.string().trim().min(1).max(80), password: z.string().min(8) });
+app.post("/api/setup", async (req, res) => {
+  const parsed = setupSchema.safeParse(req.body);
+  if (!parsed.success) return error(res, 400, "Udfyld opsætningskode, brugernavn (3–30 tegn), navn og adgangskode (mindst 8 tegn).");
+  if (setupRunning || !setupNeeded(db)) return error(res, 409, "Opsætningen er allerede gennemført. Log ind.");
+  if (!setupTokenMatches(dataFile, parsed.data.token)) return error(res, 403, "Opsætningskoden er forkert. Find linket i serverens log.");
+  setupRunning = true;
+  try {
+    const { username, name, password } = parsed.data;
+    const created = await auth.api.signUpEmail({ body: { email: `${username.toLowerCase()}@users.find-ord.invalid`, name, password, username } });
+    if (!created.user) throw new Error("Administratoren kunne ikke oprettes.");
+    try {
+      db.transaction(() => {
+        db.prepare("UPDATE user SET role = 'admin' WHERE id = ?").run(created.user.id);
+        db.prepare("INSERT INTO profile (user_id, child) VALUES (?, 0)").run(created.user.id);
+      })();
+    } catch (cause) {
+      // Never leave a non-admin first account behind; setup stays open for a new attempt.
+      db.prepare("DELETE FROM user WHERE id = ?").run(created.user.id);
+      throw cause;
+    }
+    finishSetup(dataFile);
+    res.status(201).json({ username: username.toLowerCase() });
+  } catch { error(res, 500, "Administratoren kunne ikke oprettes. Prøv igen."); }
+  finally { setupRunning = false; }
 });
 
 const accountSchema = z.object({ username: z.string().regex(/^[a-zA-Z0-9_.-]{3,30}$/), name: z.string().trim().min(1).max(80), password: z.string().min(8), child: z.boolean() });
