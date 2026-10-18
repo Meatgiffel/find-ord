@@ -9,7 +9,7 @@ Systemets moduler, aktuelle API og planlagte kontraktændringer står i [arkitek
 
 ## Status og begrænsninger
 
-Den første spilbare udgave har ni kategorier, alle fire niveauer (Let, Normal, Svær og Ekspert), enkeltbaner og endeløse kampagner, separat login, administration af nye konti, ordmarkering, hints, lokal lagring, synkronisering, 47 achievements og frivillige mål, der giver hintkreditter.
+Den første spilbare udgave har tolv kategorier, alle fire niveauer (Let, Normal, Svær og Ekspert), enkeltbaner og endeløse kampagner, separat login, administration af nye konti, ordmarkering, hints, lokal lagring, synkronisering, 47 achievements og frivillige mål, der giver hintkreditter.
 
 **Børneprofilen** bruger kun ord, der er godkendt til børn efter [børnepolitikken](docs/ordindhold.md#børnepolitik-version-3). Hele gitteret tjekkes desuden for forbudte sekvenser. Politikken og listerne er lavet af AI på ejerens vegne og er ikke gennemgået af en uafhængig redaktør. Ingen kontrol fanger enhver stødende tolkning. Planlagt automatisk backup og fysisk test på iPhone, iPad og Android er heller ikke færdigverificeret.
 

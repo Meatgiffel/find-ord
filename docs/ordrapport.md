@@ -2,10 +2,10 @@
 
 Genereret af `npm run report:words`. Ret ikke filen i hånden.
 
-Ordliste v2 · kategorier v2 · børnepolitik v3 · kilde COR 1.5.1.0
+Ordliste v3 · kategorier v3 · børnepolitik v3 · kilde COR 1.5.1.0
 
-- Unikke ordformer: 858, heraf 853 godkendt til børn.
-- Tilknytninger (ord × kategori): 873. Alle har en COR-kilde.
+- Unikke ordformer: 1050, heraf 1045 godkendt til børn.
+- Tilknytninger (ord × kategori): 1083. Alle har en COR-kilde.
 - Blokerede sekvenser i børnegitre: 40 (listen står i `src/shared/safety.ts`).
 
 ## Dækning pr. kategori og niveau
@@ -23,22 +23,25 @@ Tallene er antal ord med niveauets tilladte længde, voksen / barn. Et niveau ti
 | Sport | 89 / 89 | 28 / 28 | 67 / 67 | 81 / 81 | 68 / 68 |
 | Transport | 94 / 94 | 37 / 37 | 75 / 75 | 81 / 81 | 70 / 70 |
 | Vejret | 83 / 83 | 29 / 29 | 69 / 69 | 76 / 76 | 68 / 68 |
+| Tøj | 68 / 68 | 24 / 24 | 56 / 56 | 64 / 64 | 60 / 60 |
+| Musik | 72 / 72 | 31 / 31 | 62 / 62 | 66 / 66 | 55 / 55 |
+| Erhverv | 70 / 70 | 11 / 11 | 51 / 51 | 65 / 65 | 66 / 66 |
 
 ## Ordlængder
 
 | Bogstaver | Ord |
 |---|---|
-| 3 | 85 |
-| 4 | 147 |
-| 5 | 142 |
-| 6 | 121 |
-| 7 | 104 |
-| 8 | 111 |
-| 9 | 69 |
-| 10 | 42 |
-| 11 | 21 |
-| 12 | 8 |
-| 13 | 4 |
+| 3 | 91 |
+| 4 | 167 |
+| 5 | 173 |
+| 6 | 152 |
+| 7 | 137 |
+| 8 | 144 |
+| 9 | 84 |
+| 10 | 52 |
+| 11 | 26 |
+| 12 | 9 |
+| 13 | 11 |
 | 14 | 2 |
 | 15 | 2 |
 

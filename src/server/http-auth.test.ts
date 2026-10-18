@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import Database from "better-sqlite3";
 import { findWord, type Puzzle } from "../shared/game.js";
 import { freePort, ready } from "./test-server.js";
+import { CATEGORIES } from "../shared/words.js";
 
 describe("HTTP-adgangskontrol", () => {
   it("afviser offentlig oprettelse, fremmede baner og requests uden gyldig origin", async () => {
@@ -127,7 +128,7 @@ describe("HTTP-adgangskontrol", () => {
       const root = await login("root");
       expect((await fetch(`${baseURL}/api/admin/words`, { headers: { Cookie: alice } })).status).toBe(403);
       const wordAdmin = await (await fetch(`${baseURL}/api/admin/words`, { headers: { Cookie: root } })).json() as { words: Array<{ sources: string[] }>; coverage: unknown[] };
-      expect(wordAdmin.coverage).toHaveLength(9);
+      expect(wordAdmin.coverage).toHaveLength(Object.keys(CATEGORIES).length);
       expect(wordAdmin.words.length).toBeGreaterThan(800);
       expect(wordAdmin.words.every((item) => item.sources.length > 0)).toBe(true);
       const adminCall = (path: string, body: object) => fetch(`${baseURL}/api/auth/admin/${path}`, {

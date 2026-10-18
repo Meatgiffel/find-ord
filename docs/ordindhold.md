@@ -31,7 +31,7 @@ COR er et register over almindelige ord, så egennavne indgår stort set ikke. L
 
 ## Kategorier
 
-En bane bruger ord fra præcis én kategori. Kun ord, der står på en kategoris redaktionelle liste i `src/shared/words.ts`, kan blive målord. Der findes ingen "alle ord"-fallback, så ord fra COR, der ikke er kategoriseret, bliver aldrig målord. Et ord kan høre til flere kategorier, fx FISK i både Dyr og Mad. Tilknytningen gælder i den kategori, banen er lavet i.
+Der er tolv kategorier (de ni første siden ordliste v2, Tøj, Musik og Erhverv siden v3). En bane bruger ord fra præcis én kategori. Kun ord, der står på en kategoris redaktionelle liste i `src/shared/words.ts`, kan blive målord. Der findes ingen "alle ord"-fallback, så ord fra COR, der ikke er kategoriseret, bliver aldrig målord. Et ord kan høre til flere kategorier, fx FISK i både Dyr og Mad. Tilknytningen gælder i den kategori, banen er lavet i.
 
 | ID | Navn | Med | Ikke med |
 |---|---|---|---|
@@ -44,6 +44,9 @@ En bane bruger ord fra præcis én kategori. Kun ord, der står på en kategoris
 | `sport` | Sport | Sportsgrene, udstyr, steder, roller og bevægelser i sport. | Fritidsting uden en tydelig sportsbetydning. |
 | `transport` | Transport | Køretøjer, infrastruktur, rejser, dele og personale. | Vejrforhold og steder uden en transportfunktion. |
 | `vejret` | Vejret | Vejrfænomener, årstider, målinger, vejrord og tøj mod vejret. | Landskaber (Natur). |
+| `toej` | Tøj | Tøj, fodtøj, smykker og tilbehør samt tøjets dele (KNAP, LYNLÅS, ÆRME). | Stoffer og materialer. |
+| `musik` | Musik | Instrumenter, genrer, roller, steder og begreber som MELODI og RYTME. | Bestemte kunstnere og titler. |
+| `erhverv` | Erhverv | Fag og stillinger, som børn kender fra hverdagen. | Arbejdspladser og værktøj. Militære og voldelige roller er ikke med (børnepolitikken). |
 
 Regler for tvetydige ord og bøjninger:
 
@@ -101,7 +104,7 @@ Undtagelse for falske positiver: Ligger en sekvens inde i et børnegodkendt ord 
 Ændringer i listerne følger en fast procedure:
 
 1. Ret listen eller `adultOnly` i `src/shared/words.ts`, og tag stilling til hvert nyt ord efter tabellen ovenfor.
-2. Hæv `WORD_LIST_VERSION` og `CATEGORY_TAG_VERSION`. Hæv `CHILD_POLICY_VERSION`, hvis børnegodkendelser eller blokerede sekvenser ændres.
+2. Hæv `WORD_LIST_VERSION` og `CATEGORY_TAG_VERSION`. Hæv `CHILD_POLICY_VERSION`, hvis en børnegodkendelse trækkes tilbage, eller listen over blokerede sekvenser ændres. Nye godkendte ord kræver det ikke, for de gør ingen eksisterende bane ugyldig.
 3. Kør `npm run report:words`. Kommandoen fejler, hvis et ord mangler i COR, og den opdaterer kildefilen og ordrapporten.
 4. Kør `npm test` og `npm run test:generator`. Testene tjekker, at kildefilen er ajour, at der er mindst 500 børneord, at børnebaner kun bruger børneord, og at undtagelserne virker.
 5. Gennemgå ændringen i diffen af `content/ordkilder.tsv`, før den godkendes.
