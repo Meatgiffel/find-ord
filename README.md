@@ -71,7 +71,7 @@ npm run build
 npm run test:generator -- --seeds=1000
 ```
 
-Generatorprøven bruger 1.000 reproducerbare seeds pr. tilgængelig kategori, niveau og profiltype. Fejl angiver kombination og seed i `reports/generator.json`. GitHub Actions kører hurtige checks og generatorprøven som særskilte jobs og gemmer rapporter som artifacts. Jobbet “Release checks passed” bliver kun grønt, når begge jobs består; gør det til et påkrævet statuscheck før udgivelse.
+Generatorprøven bruger 1.000 reproducerbare seeds pr. tilgængelig kategori, niveau og profiltype. Rapporten `reports/generator.json` viser succesrate, gennemsnitlig og maksimal tid pr. kombination samt kombinationer, der mangler ord. Fejl angiver kombination, seed og versioner. Egenskabstestene i `src/shared/generator.property.test.ts` dækker retninger, kanter, krydsninger, palindromer, små puljer, genereringsbudget og injicerede blokerede sekvenser. GitHub Actions kører hurtige checks og generatorprøven som særskilte jobs og gemmer rapporter som artifacts. Jobbet “Release checks passed” bliver kun grønt, når begge jobs består; gør det til et påkrævet statuscheck før udgivelse.
 
 Tests bruger midlertidige SQLite-databaser og kontrollerede ord-fixtures. HTTP-integrationstesten starter en lokal server og kontrollerer login, adgang til egne baner og afvisning af ugyldige kald. Testene kræver ikke internet eller private driftsdata.
 

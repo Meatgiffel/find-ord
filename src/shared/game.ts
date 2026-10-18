@@ -51,12 +51,13 @@ function shuffle<T>(items: T[], next: () => number): T[] {
 
 const LETTERS = "AAAAAAAEEEEEEEEEIIIIINNNNNNRRRRRRSSSSSTTTTTDDDDLLLKKKMMMOOOØØÆÅBBBFFGGHHJPUVY";
 
-export function makePuzzle(id: string, category: CategoryId, level: LevelId, seed: number, child = false): Puzzle {
-  if (!(category in CATEGORIES) || !availableLevels(category, child).includes(level)) throw new Error("Kategorien har ikke nok ord til niveauet.");
+// pool replaces the category list in tests; the result must still pass validatePuzzle.
+export function makePuzzle(id: string, category: CategoryId, level: LevelId, seed: number, child = false, pool?: readonly string[]): Puzzle {
+  if (!Object.hasOwn(CATEGORIES, category) || !Object.hasOwn(LEVELS, level) || (!pool && !availableLevels(category, child).includes(level))) throw new Error("Kategorien har ikke nok ord til niveauet.");
   const setting = LEVELS[level];
   const next = random(seed);
   for (let layoutAttempt = 0; layoutAttempt < 30; layoutAttempt++) {
-    const candidates = shuffle(categoryWords(category, child)
+    const candidates = shuffle([...(pool ?? categoryWords(category, child))]
       .filter((word) => word.length >= setting.min && word.length <= setting.max), next);
     const grid = Array.from({ length: setting.size }, () => Array<string>(setting.size).fill(""));
     const chosen: string[] = [];

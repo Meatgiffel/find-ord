@@ -176,7 +176,10 @@ export function adultOnlyReason(category: CategoryId, word: string): string | nu
 // A level is only offered when the profile's own word pool covers it; children never
 // fall back to the adult pool.
 export function availableLevels(category: CategoryId, child = false): LevelId[] {
-  const words = categoryWords(category, child);
+  return levelsCoveredBy(categoryWords(category, child));
+}
+
+export function levelsCoveredBy(words: readonly string[]): LevelId[] {
   return (Object.keys(LEVELS) as LevelId[]).filter((level) => {
     const setting = LEVELS[level];
     return words.filter((word) => word.length >= setting.min && word.length <= setting.max).length >= setting.words;
