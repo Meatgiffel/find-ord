@@ -1,6 +1,6 @@
 # Find ord
 
-**AI-lavet projekt:** Kode, tests, brugerflade og dokumentation er i væsentligt omfang udviklet med AI-assistance fra OpenAI Codex under menneskelig styring. Projektet er en tidlig udgave og er ikke færdigverificeret for sikkerhed, tilgængelighed eller børneindhold. Gennemgå det selv, før du bruger det med rigtige konti eller børn.
+**AI-lavet projekt:** Kode, tests, brugerflade og dokumentation er i væsentligt omfang udviklet med AI-assistance fra OpenAI Codex og Anthropic Claude under menneskelig styring. Projektet er en tidlig udgave og er ikke færdigverificeret for sikkerhed, tilgængelighed eller børneindhold. Gennemgå det selv, før du bruger det med rigtige konti eller børn.
 
 Find ord er en dansk ordjagt bygget med Svelte, Node.js, Better Auth og SQLite. Serveren danner baner med én kategori; en hentet bane kan spilles og afsluttes offline i den installérbare PWA. Træk synkroniseres, når serveren igen er tilgængelig.
 
@@ -40,6 +40,13 @@ Compose gemmer SQLite-database og en lokalt genereret authentication-hemmelighed
 ### Telefon, tablet og HTTPS
 
 PWA-installation på en anden enhed kræver HTTPS med et certifikat, som enheden stoler på. Sæt `BASE_URL` til den eksterne HTTPS-adresse, og lad en reverse proxy videresende til port 3000. Tilføj eventuelle andre tilladte origins i `TRUSTED_ORIGINS` som en kommasepareret liste. Sæt `TRUST_PROXY` til proxyens adresse eller net (fx `192.168.50.0/24`), så begrænsningen af loginforsøg gælder pr. klient; uden den ser servicen kun proxyens adresse, og alle deler samme grænse. Servicen overskriver selv klientadressen, så en klient ikke kan forfalske den. Bind helst appens port til loopback eller et afgrænset lokalnet. Almindelig HTTP på lokalnettet sender loginoplysninger og sessionscookies ukrypteret og kan ikke bruges til PWA-installation på en anden enhed.
+
+**Installér på hjemmeskærmen** (kræver HTTPS):
+
+- iPhone og iPad: Åbn adressen i Safari, tryk på Del og vælg "Føj til hjemmeskærm".
+- Android: Åbn adressen i Chrome, åbn menuen og vælg "Installer app" (eller "Føj til startskærm").
+
+Log ind, og vent på, at gemte baner viser "Klar offline". Først da er appen gemt på enheden, så den kan åbnes uden forbindelse.
 
 Første login og nye baner kræver serverkontakt. En ny app-version installeres i baggrunden og aktiveres først, når spilleren trykker "Opdatér" på forsiden; den afbryder aldrig en bane, og gemte baner bevares. En komplet hentet bane gemmes på enheden og kan fortsættes offline. Browseren eller brugeren kan slette lokal lagring; synkronisér derfor før rydning af browserdata eller skift af enhed. Serverbackup omfatter kun synkroniserede træk.
 
@@ -99,8 +106,29 @@ Containeren kører som uid 1000; backupfilerne skal kunne læses af den bruger. 
 
 Ved opdatering: tag backup, kør `docker compose up -d --build`, og behold volumet. Migrationer kører ved start i transaktioner; fejler en, beholdes de eksisterende data, og servicen starter ikke. Rul tilbage ved at bygge den tidligere udgave (`git checkout <tidligere commit>`) og gendanne backuppen fra før opdateringen. En backup fra en nyere udgave afvises af en ældre. Ældre backups indeholder data for konti, der senere er slettet; slet eller udskift dem efter din egen opbevaringsperiode, hvis de data ikke skal kunne gendannes. Hold databasen på lokal disk i Docker-volumet, ikke på et delt netværksfilsystem; SQLite i WAL-tilstand understøtter det ikke.
 
+## Fejlsøgning
+
+| Symptom | Løsning |
+|---|---|
+| Engangslinket til første administrator er væk | Se `docker compose logs find-ord`. Koden ligger også i `setup-token` i datavolumet, så længe der ingen konti er. Ellers kan du bruge `docker compose exec find-ord npm run bootstrap`. |
+| Ingen kan logge ind som administrator | `docker compose exec find-ord npm run reset-admin`. |
+| Containeren er `unhealthy` | `curl http://localhost:3000/api/ready` viser, hvad der mangler (database, skema eller ordgrundlag). Se `startup-failed` i loggen. |
+| "Serverens disk er fuld" (507) | Frigør plads på værten. Servicen kommer sig selv. Trækkene ligger på enhederne og sendes igen. |
+| "Serveren danner mange baner lige nu" (503) | Køen er fuld. Prøv igen om lidt, eller hæv `GENERATION_QUEUE_LIMIT`. |
+| "For mange forsøg" ved login | Loginforsøg begrænses pr. klient. Ser alle klienter ud til at komme fra proxyen, mangler `TRUST_PROXY`. |
+| Appen kan ikke installeres på telefonen | Kræver HTTPS med et certifikat, som enheden stoler på. Med en lokal CA skal CA'en installeres og betros på enheden. |
+| Øverst står "Serveren svarer ikke" eller "Ingen internet" | Hentede baner kan spilles videre, og trækkene sendes, når forbindelsen er tilbage. "Session udløbet" kræver nyt login. |
+| Stop og genstart | `docker compose stop` lukker SQLite pænt (op til 15 s). `docker compose start` starter igen. |
+
+## Platforme, afhængigheder og udgivelser
+
+- **Verificeret:** Docker 29 på linux/amd64, både på Fedora 44 og på en Debian 13-VM (docker-01: 4 vCPU, 7,8 GiB RAM). Det er referencehardwaren i [drift og kapacitet](docs/drift-og-kapacitet.md). En frisk installation, opgradering, backup og restore er gennemført efter denne vejledning. Browsertest er lavet i Chromium på telefon- og desktopbredde.
+- **Ikke verificeret endnu:** linux/arm64 og fysiske iPhone-, iPad- og Android-enheder. De testes i [TEA-48](https://linear.app/team-vre/issue/TEA-48).
+- **Afhængigheder:** Node.js 22, Svelte 5.57, Vite 7.3, vite-plugin-pwa 2.0 (Workbox), Dexie 4.4, Better Auth 1.7.10, Express 4, better-sqlite3 12 og zod 4. Præcise versioner står i `package.json` og `package-lock.json`. Ejeren af installationen opdaterer afhængigheder. Det sker med `npm update` eller en målrettet opgradering efterfulgt af alle checks ovenfor. Better Auth og Dexie er låst til en bestemt version, fordi de ejer sessions- og lokalskemaer. Læs deres ændringslog før en opgradering.
+- **Udgivelse:** En version mærkes med et git-tag (fx `v1.0.0`), når alle checks i CI er grønne, og releasechecket i [TEA-40](https://linear.app/team-vre/issue/TEA-40) er gennemført, herunder test på fysiske enheder.
+
 ## Ordgrundlag
 
-Det bundtede grundregister er [COR 1.5.1.0](https://ordregister.dk/) fra Dansk Sprognævn. Kilde-TSV: `https://ordregister.dk/files/cor1.5.1.0.tsv`, SHA-256 `1c4d1c06bd676e66be8e8c0af68615c8a892472a05af3b261ba8a9d1f2d2b82b`. Dansk Sprognævn beskriver COR som [frit tilgængeligt og anvendeligt til alle formål](https://www.dsn.dk/forskning/sprogteknologi-og-fagsprog/cor/). Registeret importeres ved første start i én transaktion, og importen registrerer en årsag til hvert udelukket ord. Rapporten kan ses med `npm run import:words`. Kun ord på de redaktionelle kategorilister bliver målord. Listerne har 858 ordformer, og hver har en COR-kilde.
+Det bundtede grundregister er [COR 1.5.1.0](https://ordregister.dk/) fra Dansk Sprognævn. Kilde-TSV: `https://ordregister.dk/files/cor1.5.1.0.tsv`, SHA-256 `1c4d1c06bd676e66be8e8c0af68615c8a892472a05af3b261ba8a9d1f2d2b82b`. Dansk Sprognævn beskriver COR som [frit tilgængeligt og anvendeligt til alle formål](https://www.dsn.dk/forskning/sprogteknologi-og-fagsprog/cor/). Registeret importeres ved første start i én transaktion, og importen registrerer en årsag til hvert udelukket ord. Rapporten kan ses med `npm run import:words`. Kun ord på de redaktionelle kategorilister bliver målord. Listerne har 1.050 ordformer i tolv kategorier, og hver har en COR-kilde.
 
 “Alle danske ord” betyder bred, udvidelig og dokumenteret kildedækning, ikke en fuldstændig liste over alle mulige sammensætninger. Kategorier, børnepolitik, forbudte sekvenser og den redaktionelle procedure er beskrevet i [docs/ordindhold.md](docs/ordindhold.md). Dækningen pr. kategori, niveau og profiltype står i [docs/ordrapport.md](docs/ordrapport.md) (`npm run report:words`).
