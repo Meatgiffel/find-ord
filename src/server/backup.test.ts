@@ -47,7 +47,7 @@ describe("backup og restore", () => {
     db.close();
     expect(folder.endsWith("find-ord-backup-20261018-120000")).toBe(true);
     const manifest = JSON.parse(readFileSync(join(folder, "manifest.json"), "utf8"));
-    expect(manifest).toMatchObject({ format: 1, schemaVersion: 5, counts: { users: 1, games: 1, events: 1 } });
+    expect(manifest).toMatchObject({ format: 1, schemaVersion: 6, counts: { users: 1, games: 1, events: 1 } });
     expect(statSync(join(folder, "find-ord.sqlite")).mode & 0o777).toBe(0o600);
 
     const restored = join(root, "new", "find-ord.sqlite");

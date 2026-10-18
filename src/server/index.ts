@@ -8,7 +8,7 @@ import { z } from "zod";
 import { auth, authForHost, lanAuth, trustedOrigins } from "./auth.js";
 import { db, migrateGameData } from "./database.js";
 import { importBundledCor } from "./lexicon.js";
-import { achievementsForUser } from "./achievements.js";
+import { achievementsForUser, statsForUser } from "./achievements.js";
 import { campaignsForUser, refillCampaign, startCampaign } from "./campaigns.js";
 import { applyGameEvents, loadGameForUser, type GameRow } from "./game-sync.js";
 import { CATEGORIES, CATEGORY_TAG_VERSION, WORD_LIST_VERSION, availableLevels, campaignLevels, type CategoryId, type LevelId } from "../shared/words.js";
@@ -89,6 +89,11 @@ app.get("/api/categories", async (req, res) => {
 app.get("/api/achievements", async (req, res) => {
   const current = await user(req, res); if (!current) return;
   res.json(achievementsForUser(db, current.id));
+});
+
+app.get("/api/stats", async (req, res) => {
+  const current = await user(req, res); if (!current) return;
+  res.json(statsForUser(db, current.id));
 });
 
 const campaignSchema = z.object({ level: z.enum(["let", "normal", "svaer", "ekspert"]) });

@@ -100,6 +100,22 @@ const migrations: Migration[] = [
         CREATE UNIQUE INDEX game_one_abandon ON game_event(game_id) WHERE kind = 'abandon';
       `);
     }
+  },
+  {
+    version: 6,
+    apply(db) {
+      // One award per account and achievement, kept with the time it was first reached.
+      db.exec(`
+        CREATE TABLE achievement_award (
+          user_id TEXT NOT NULL,
+          achievement_id TEXT NOT NULL,
+          catalog_version INTEGER NOT NULL,
+          awarded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (user_id, achievement_id),
+          FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE
+        );
+      `);
+    }
   }
 ];
 

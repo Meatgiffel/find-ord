@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { applyGameEvents, loadGameForUser, type GameRow } from "./game-sync.js";
+import { migrateGameData } from "./migrations.js";
 import { findWord, HINT_LIMIT, makePuzzle, type Move, type Puzzle } from "../shared/game.js";
 import { CATEGORIES, availableLevels, type CategoryId, type LevelId } from "../shared/words.js";
 
@@ -25,7 +26,8 @@ describe("serverens hintbudget", () => {
   beforeEach(() => {
     serial = 0;
     db = new Database(":memory:");
-    db.exec("CREATE TABLE game (id TEXT PRIMARY KEY, user_id TEXT, category TEXT, level TEXT, puzzle TEXT, found TEXT, hints TEXT, completed INTEGER, abandoned INTEGER DEFAULT 0, revision INTEGER); CREATE TABLE game_event (id TEXT PRIMARY KEY, game_id TEXT, user_id TEXT, kind TEXT, word TEXT)");
+    db.exec("CREATE TABLE user (id TEXT PRIMARY KEY); INSERT INTO user (id) VALUES ('alice'), ('bob')");
+    migrateGameData(db);
   });
   afterEach(() => db.close());
 

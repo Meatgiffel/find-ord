@@ -1,13 +1,13 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { authClient } from "./auth.js";
-  import { local, recordMove, saveGame, saveCampaign, eraseLocal, offlineSignOut, pendingServerLogout, clearPendingServerLogout, approveDownloadedGame, reconcileDownloadedGames, removeDownloadedGame, retireDownloadedGame, usableOffline, pruneOfflineGames, saveMissingGames, requestPersistentStorage, isQuotaError, MAX_OFFLINE_GAMES, type DownloadedCampaign, type PuzzleVersions, type StoredCampaign, type StoredGame, type StoredIdentity } from "./storage.js";
+  import { local, recordMove, saveGame, saveCampaign, eraseLocal, offlineSignOut, pendingServerLogout, clearPendingServerLogout, approveDownloadedGame, reconcileDownloadedGames, removeDownloadedGame, retireDownloadedGame, usableOffline, pruneOfflineGames, saveMissingGames, requestPersistentStorage, isQuotaError, MAX_OFFLINE_GAMES, type DownloadedCampaign, type PlayerStats, type PuzzleVersions, type StoredCampaign, type StoredGame, type StoredIdentity } from "./storage.js";
   import { CATEGORIES, LEVELS, availableLevels, campaignLevels, directionDescription, surpriseCategory, type CategoryId, type LevelId } from "../shared/words.js";
   import { cellsBetween, findWord, HINT_LIMIT, hintsRemaining, visibleHint, wordAt, type Move, type Point, type Puzzle } from "../shared/game.js";
   import { snapDragEnd } from "./drag.js";
   import { applyUpdate, updateReady } from "./pwa.js";
   import { newMoveId } from "./ids.js";
-  import type { Achievement } from "../shared/achievements.js";
+  import { ACHIEVEMENT_ICONS, nextGoals, type Achievement } from "../shared/achievements.js";
 
   type Identity = Omit<StoredIdentity, "key">;
   type ServerIdentity = Identity & { puzzleVersions: PuzzleVersions };
@@ -50,7 +50,9 @@
   let showAccounts = false;
   let achievements: Achievement[] = [];
   let newAchievements: Achievement[] = [];
-  let showAchievements = false;
+  let achievementFilter: "all" | "unlocked" | "locked" = "all";
+  let stats: PlayerStats | null = null;
+  $: shownAchievements = achievements.filter((item) => achievementFilter === "all" || item.unlocked === (achievementFilter === "unlocked"));
   let syncing = false;
   let syncTask: Promise<void> | null = null;
   let syncAgain = false;
@@ -206,7 +208,9 @@
         }
       }
       if (identity) {
-        achievements = (await local.achievements.get(identity.id))?.items ?? [];
+        const cached = await local.achievements.get(identity.id);
+        achievements = cached?.items ?? [];
+        stats = cached?.stats ?? null;
         if (online) await syncAll();
         else await refreshLocal();
       }
@@ -235,7 +239,9 @@
       sessionExpired = false;
       await local.identity.put({ key: "identity", ...me });
       password = ""; online = true;
-      achievements = (await local.achievements.get(me.id))?.items ?? [];
+      const cached = await local.achievements.get(me.id);
+      achievements = cached?.items ?? [];
+      stats = cached?.stats ?? null;
       await syncAll();
     } catch (cause) { message = cause instanceof Error ? cause.message : "Login mislykkedes."; }
     finally { busy = false; }
@@ -272,7 +278,7 @@
     try {
       if (!await refreshConnectedAccount() || !identity) return;
       if (await pruneOfflineGames(identity.id, MAX_OFFLINE_GAMES - 1) >= MAX_OFFLINE_GAMES) {
-        message = `Der er allerede ${MAX_OFFLINE_GAMES} hentede baner på enheden. Gennemfør nogle af dem, før du henter flere.`;
+        message = `Der er allerede ${MAX_OFFLINE_GAMES} hentede baner på enheden. Gennemfør eller opgiv nogle af dem, før du henter flere.`;
         return;
       }
       const game = await api("/games", { method: "POST", body: JSON.stringify({ category: chosenCategory, level: chosenLevel }) });
@@ -659,7 +665,8 @@
           }
         }
         achievements = items;
-        await local.achievements.put({ owner: identity.id, items, updatedAt: Date.now() });
+        stats = await api("/stats") as PlayerStats;
+        await local.achievements.put({ owner: identity.id, items, stats, updatedAt: Date.now() });
       } catch { /* Spiltræk er allerede synkroniseret; belønninger opdateres ved næste kontakt. */ }
     } catch (cause) {
       if (cause instanceof Error && "status" in cause && cause.status === 401) {
@@ -753,9 +760,32 @@
       </details>
       <details class="card secondary-panel"><summary>Achievements <span>{achievements.filter((item) => item.unlocked).length}/{achievements.length}</span></summary>
         {#if achievements.length}
-          <div class="achievement-list">{#each (showAchievements ? achievements : achievements.slice(0, 6)) as item (item.id)}<div class:unlocked={item.unlocked}><span>{item.unlocked ? "★" : "☆"}</span><div><strong>{item.title}</strong><small>{item.description}</small></div><b>{item.current}/{item.target}</b></div>{/each}</div>
-          <button class="secondary" onclick={() => showAchievements = !showAchievements}>{showAchievements ? "Vis færre" : `Vis alle ${achievements.length}`}</button>
+          {#if pending}<p class="muted">{pending} træk afventer synkronisering. Achievements opdateres, når de er modtaget.</p>{/if}
+          {#if nextGoals(achievements).length}
+            <h3 class="panel-heading">Næste mål</h3>
+            <div class="next-goals">{#each nextGoals(achievements) as item (item.id)}<div><span aria-hidden="true">{ACHIEVEMENT_ICONS[item.icon]}</span><strong>{item.title}</strong><progress max={item.target} value={item.current} aria-label={`${item.title}: ${item.current} af ${item.target}`}></progress><b>{item.current}/{item.target}</b></div>{/each}</div>
+          {/if}
+          <div class="achievement-filter" role="group" aria-label="Vis achievements">
+            {#each [["all", "Alle"], ["unlocked", "Optjent"], ["locked", "Mangler"]] as [value, label] (value)}<button class="secondary" aria-pressed={achievementFilter === value} onclick={() => achievementFilter = value as typeof achievementFilter}>{label}</button>{/each}
+          </div>
+          <div class="achievement-list">{#each shownAchievements as item (item.id)}<div class:unlocked={item.unlocked}><span aria-hidden="true">{ACHIEVEMENT_ICONS[item.icon]}</span><div><strong>{item.title}</strong><small>{item.description}</small>{#if item.unlockedAt}<small>Optjent {new Date(item.unlockedAt).toLocaleDateString("da-DK", { day: "numeric", month: "long", year: "numeric" })}</small>{/if}</div><b>{item.unlocked ? "✓" : `${item.current}/${item.target}`}</b></div>{/each}</div>
         {:else}<p class="muted">Dine achievements vises, når du har forbindelse.</p>{/if}
+      </details>
+      <details class="card secondary-panel"><summary>Statistik</summary>
+        {#if stats}
+          <dl class="stats-grid">
+            <div><dt>Gennemførte baner</dt><dd>{stats.completed}</dd></div>
+            <div><dt>Fundne ord</dt><dd>{stats.found}</dd></div>
+            <div><dt>Forskellige ord</dt><dd>{stats.unique}</dd></div>
+            <div><dt>Uden hint</dt><dd>{stats.withoutHints}</dd></div>
+            <div><dt>Spilledage</dt><dd>{stats.activeDays}</dd></div>
+          </dl>
+          {#if stats.byCategory.length}
+            <table class="stats-table"><caption>Pr. kategori</caption><thead><tr><th scope="col">Kategori</th><th scope="col">Baner</th><th scope="col">Ord</th></tr></thead>
+              <tbody>{#each stats.byCategory as row (row.category)}<tr><th scope="row">{CATEGORIES[row.category as CategoryId]?.name ?? row.category}</th><td>{row.completed}</td><td>{row.found}</td></tr>{/each}</tbody></table>
+          {/if}
+          {#if pending}<p class="muted">Tallene er fra sidste synkronisering.</p>{/if}
+        {:else}<p class="muted">Din statistik vises, når du har forbindelse.</p>{/if}
       </details>
       <details class="card secondary-panel"><summary>Min konto</summary>
         <p>{identity.name} <small class="muted">@{identity.username}</small></p>
@@ -781,7 +811,7 @@
       {/if}
     {:else}
       <section class="game-heading">
-        <button class="back" onclick={() => { active = null; selectedStart = null; }} disabled={markingWord}>← Forside</button>
+        <button class="back" onclick={() => { active = null; selectedStart = null; message = ""; }} disabled={markingWord}>← Forside</button>
         <div class="game-title"><div class="eyebrow">{active.campaignId ? `KAMPAGNE · BANE ${active.campaignPosition} · ` : ""}{LEVELS[active.puzzle.level].name.toLocaleUpperCase("da-DK")} · {active.puzzle.grid.length} × {active.puzzle.grid.length}</div><h1>{CATEGORIES[active.puzzle.category].name}</h1></div>
         <p class="game-status">{active.found.length} af {active.puzzle.words.length} ord · {pending ? `${pending} træk afventer synkronisering` : online ? "Synkroniseret" : "Gemt på enheden"}</p>
         <p class="game-directions">Ordretninger: {directionDescription(active.puzzle.level)}.</p>
@@ -798,7 +828,7 @@
               <div class="completion-actions">
                 {#if active.campaignId}<button class="primary" onclick={nextInCampaign} disabled={busy}>Næste bane →</button>
                 {:else}<button class="primary" onclick={newSingleGame} disabled={busy}>{busy ? "Henter bane…" : "Ny bane →"}</button>{/if}
-                <button class="secondary" onclick={() => { active = null; selectedStart = null; }}>Forside</button>
+                <button class="secondary" onclick={() => { active = null; selectedStart = null; message = ""; }}>Forside</button>
               </div>
               {#if !online && active.campaignId && !nextCampaignGame}<p class="completion-note">Ingen hentet næste bane er klar. Opret forbindelse for at hente flere.</p>{/if}
               {#if !online && !active.campaignId && !nextSingleGame}<p class="completion-note">Ingen hentet bane i samme kategori og sværhedsgrad er klar. Opret forbindelse for at hente en ny.</p>{/if}

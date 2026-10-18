@@ -865,3 +865,20 @@ input:focus-visible {
 }
 
 .achievement-card{margin-top:18px;padding:28px}.achievement-card>p{color:#71897a;font-size:.82rem}.achievement-list{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:16px 0}.achievement-list>div{display:flex;align-items:center;gap:10px;background:#f4f6f0;border:1px solid #e3e9e0;border-radius:10px;padding:11px;color:#83958a}.achievement-list>div.unlocked{background:#eff5eb;color:#386349}.achievement-list>div>span{font-size:1.4rem;color:#cf9866}.achievement-list>div>div{flex:1;min-width:0}.achievement-list strong,.achievement-list small{display:block}.achievement-list strong{font-size:.78rem}.achievement-list small{font-size:.66rem;font-weight:400;margin-top:2px}.achievement-list b{font-size:.68rem;white-space:nowrap}@media(max-width:620px){.achievement-list{grid-template-columns:1fr}.achievement-card{padding:21px}}
+.panel-heading { margin: 14px 0 8px; font-size: 0.82rem; letter-spacing: 0.04em; color: #536b5f; }
+.next-goals { display: grid; gap: 8px; }
+.next-goals > div { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 4px 10px; font-size: 0.8rem; }
+.next-goals progress { grid-column: 2 / 3; width: 100%; height: 8px; accent-color: #2f6a4c; }
+.next-goals b { grid-row: 1 / 3; grid-column: 3; font-size: 0.72rem; }
+.next-goals span { grid-row: 1 / 3; font-size: 1.2rem; }
+.achievement-filter { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.achievement-filter button { min-height: 40px; padding: 0 14px; }
+.achievement-filter button[aria-pressed="true"] { background: #25483a; border-color: #25483a; color: #fff; }
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin: 12px 0; }
+.stats-grid div { background: #f4f6f0; border: 1px solid #e3e9e0; border-radius: 10px; padding: 10px; }
+.stats-grid dt { font-size: 0.7rem; color: #536b5f; }
+.stats-grid dd { margin: 2px 0 0; font-size: 1.3rem; font-weight: 700; color: #25483a; }
+.stats-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.stats-table caption { text-align: left; font-weight: 700; color: #536b5f; margin-bottom: 6px; }
+.stats-table th, .stats-table td { padding: 6px 4px; border-bottom: 1px solid #e3e9e0; text-align: left; }
+.stats-table td, .stats-table thead th:not(:first-child) { text-align: right; }

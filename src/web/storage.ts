@@ -9,7 +9,8 @@ export type StoredCampaign = { id: string; owner: string; level: LevelId };
 export type DownloadedCampaign = { id: string; level: LevelId; games: Array<Omit<StoredGame, "id" | "owner" | "updatedAt" | "approvedAtDownload">> };
 export type StoredMove = Move & { id: string; gameId: string; owner: string; createdAt: number; sequence: number };
 export type StoredIdentity = { key: "identity"; id: string; name: string; username?: string | null; role?: string | null; child: boolean };
-export type StoredAchievements = { owner: string; items: Achievement[]; updatedAt: number };
+export type PlayerStats = { completed: number; found: number; unique: number; withoutHints: number; activeDays: number; byLevel: Record<string, number>; categoryTagVersion: number; byCategory: Array<{ category: string; completed: number; found: number }> };
+export type StoredAchievements = { owner: string; items: Achievement[]; updatedAt: number; stats?: PlayerStats };
 export type PuzzleVersions = { rules: number; validation: number; words: number; categories: number; childPolicy: number };
 type LocalMeta = { key: "logout"; pending: true };
 
@@ -62,8 +63,9 @@ export async function saveGame(owner: string, game: Omit<StoredGame, "id" | "own
   await local.games.put({ ...game, id: game.puzzle.id, owner, approvedAtDownload: true, updatedAt: Date.now() });
 }
 
-// Add server games that are missing on this device, within the offline limit.
-export async function saveMissingGames(owner: string, games: Array<Omit<StoredGame, "id" | "owner" | "updatedAt" | "approvedAtDownload">>, max = MAX_OFFLINE_GAMES): Promise<number> {
+// Add server games that are missing on this device. Downloads stop 10 games below the
+// offline limit, so the player can always start new games.
+export async function saveMissingGames(owner: string, games: Array<Omit<StoredGame, "id" | "owner" | "updatedAt" | "approvedAtDownload">>, max = MAX_OFFLINE_GAMES - 10): Promise<number> {
   let added = 0;
   for (const game of games) {
     if (await local.games.get(game.puzzle.id)) continue;

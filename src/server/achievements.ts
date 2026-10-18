@@ -1,10 +1,13 @@
 import type Database from "better-sqlite3";
-import { achievementsFor, type Progress } from "../shared/achievements.js";
+import { ACHIEVEMENT_CATALOG_VERSION, achievementsFor, type Achievement, type Progress } from "../shared/achievements.js";
+import { CATEGORY_TAG_VERSION } from "../shared/words.js";
 
-export function achievementsForUser(db: Database.Database, userId: string) {
+// Everything is derived from server-validated games and events, never from client counters.
+// A word counts under the category of the game it was found in.
+export function progressForUser(db: Database.Database, userId: string): Progress {
   const scalar = (sql: string) => (db.prepare(sql).get(userId) as { count: number }).count;
   const byLevel = Object.fromEntries((db.prepare("SELECT level, COUNT(*) AS count FROM game WHERE user_id = ? AND completed = 1 GROUP BY level").all(userId) as Array<{ level: string; count: number }>).map(({ level, count }) => [level, count]));
-  const progress: Progress = {
+  return {
     completed: scalar("SELECT COUNT(*) AS count FROM game WHERE user_id = ? AND completed = 1"),
     found: scalar("SELECT COUNT(*) AS count FROM game_event WHERE user_id = ? AND kind = 'find'"),
     unique: scalar("SELECT COUNT(DISTINCT word) AS count FROM game_event WHERE user_id = ? AND kind = 'find'"),
@@ -16,5 +19,37 @@ export function achievementsForUser(db: Database.Database, userId: string) {
     mostCompletedInCategory: scalar("SELECT COALESCE(MAX(count), 0) AS count FROM (SELECT COUNT(*) AS count FROM game WHERE user_id = ? AND completed = 1 GROUP BY category)"),
     mostFoundInCategory: scalar("SELECT COALESCE(MAX(count), 0) AS count FROM (SELECT COUNT(*) AS count FROM game_event e JOIN game g ON g.id = e.game_id WHERE e.user_id = ? AND e.kind = 'find' GROUP BY g.category)")
   };
-  return achievementsFor(progress);
+}
+
+// Stores newly reached goals once per account and achievement. Call it inside the same
+// transaction as the events that may unlock something. Awards are never removed.
+export function awardAchievements(db: Database.Database, userId: string): void {
+  const insert = db.prepare("INSERT OR IGNORE INTO achievement_award (user_id, achievement_id, catalog_version) VALUES (?, ?, ?)");
+  for (const item of achievementsFor(progressForUser(db, userId))) {
+    if (item.unlocked) insert.run(userId, item.id, ACHIEVEMENT_CATALOG_VERSION);
+  }
+}
+
+export function achievementsForUser(db: Database.Database, userId: string): Achievement[] {
+  db.transaction(() => awardAchievements(db, userId))();
+  const awarded = new Map((db.prepare("SELECT achievement_id, awarded_at FROM achievement_award WHERE user_id = ?").all(userId) as Array<{ achievement_id: string; awarded_at: string }>)
+    .map((row) => [row.achievement_id, row.awarded_at]));
+  // An award stays unlocked even if the current progress would no longer reach it.
+  return achievementsFor(progressForUser(db, userId)).map((item) => {
+    const at = awarded.get(item.id);
+    return at ? { ...item, unlocked: true, current: item.target, unlockedAt: `${at.replace(" ", "T")}Z` } : { ...item, unlockedAt: null };
+  });
+}
+
+export function statsForUser(db: Database.Database, userId: string) {
+  const progress = progressForUser(db, userId);
+  const byCategory = db.prepare(`SELECT g.category,
+      SUM(CASE WHEN g.completed = 1 THEN 1 ELSE 0 END) AS completed,
+      (SELECT COUNT(*) FROM game_event e JOIN game h ON h.id = e.game_id WHERE e.user_id = g.user_id AND e.kind = 'find' AND h.category = g.category) AS found
+    FROM game g WHERE g.user_id = ? GROUP BY g.category ORDER BY g.category`).all(userId) as Array<{ category: string; completed: number; found: number }>;
+  return {
+    completed: progress.completed, found: progress.found, unique: progress.unique, withoutHints: progress.withoutHints,
+    activeDays: progress.activeDays, byLevel: progress.byLevel,
+    categoryTagVersion: CATEGORY_TAG_VERSION, byCategory
+  };
 }

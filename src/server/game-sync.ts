@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import { hintError, wordAt, type Move, type Puzzle } from "../shared/game.js";
+import { awardAchievements } from "./achievements.js";
 
 export type GameRow = { id: string; user_id: string; category: string; level: string; puzzle: string; found: string; hints: string; completed: number; abandoned: number; revision: number };
 export type GameState = { found: string[]; hints: string[]; completed: boolean; abandoned: boolean; revision: number };
@@ -64,8 +65,11 @@ export function applyGameEvents(db: Database.Database, row: GameRow, userId: str
       acknowledged.push(event.id);
       applied++;
     }
-    if (applied) db.prepare("UPDATE game SET found = ?, hints = ?, completed = ?, abandoned = ?, revision = revision + 1 WHERE id = ?")
-      .run(JSON.stringify([...found]), JSON.stringify([...hints]), completed ? 1 : 0, abandoned ? 1 : 0, row.id);
+    if (applied) {
+      db.prepare("UPDATE game SET found = ?, hints = ?, completed = ?, abandoned = ?, revision = revision + 1 WHERE id = ?")
+        .run(JSON.stringify([...found]), JSON.stringify([...hints]), completed ? 1 : 0, abandoned ? 1 : 0, row.id);
+      awardAchievements(db, userId);
+    }
   })();
   return { found: [...found], hints: [...hints], completed, abandoned, revision: row.revision + (applied ? 1 : 0), acknowledged, rejected };
 }
