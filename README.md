@@ -37,7 +37,7 @@ En kampagne holder samme sværhedsgrad og skifter kategori mellem banerne. Højs
 
 Ved valg af sværhedsgrad og på selve banen vises de tilladte ordretninger. Når en bane er gennemført, vises resultatet ved gitteret med valg om næste eller ny bane og forside. En ny enkeltbane bruger samme kategori og sværhedsgrad. Offline åbnes kun en allerede hentet, uafsluttet bane med de samme valg; hvis der ikke er en, kræver en ny bane forbindelse. Kampagnen fortsætter med en hentet bane, hvis en er klar.
 
-Under et aktivt spil vises kategori, fremdrift og gemmestatus i en kompakt top. På mobil kommer gitteret før ordlisten, og genveje forbinder dem. Hintknappen ligger ved gitteret.
+Under et aktivt spil vises kategori, fremdrift og gemmestatus i en kompakt top, og en åbnet bane starter øverst. På mobil i portræt kommer gitteret før ordlisten, og genveje forbinder dem; på lave landskabsskærme står ordlisten ved siden af, og gitteret tilpasses skærmhøjden. Hintknappen og beskeder under spillet ligger ved gitteret, så intet flydende element dækker bogstaverne. Gitteret er ét tabstop, og piletasterne flytter mellem felterne.
 
 Hver bane har et fast hintbudget: 1 på Let, 2 på Normal, 3 på Svær og 4 på Ekspert. Seneste hints startfelt markeres i gitteret og beskrives med ord og position i tekst, indtil ordet findes. Ældre gemte baner over grænsen beholder deres fremdrift, men kan ikke få flere hints. Ved en konflikt mellem offlineenheder afvises det hint, der overskrider banens grænse; øvrige træk forbliver i køen til nyt synkroniseringsforsøg.
 

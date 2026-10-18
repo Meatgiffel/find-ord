@@ -437,6 +437,7 @@ main.playing { padding-top: 18px; }
 .grid-header {
   display: flex;
   justify-content: space-between;
+  gap: 6px 12px;
   font-size: 0.65rem;
   font-weight: 800;
   letter-spacing: 0.14em;
@@ -448,20 +449,27 @@ main.playing { padding-top: 18px; }
   display: grid;
   position: relative;
   grid-template-columns: repeat(var(--size), minmax(0, 1fr));
-  width: min(100%, 670px);
+  /* Keep the whole grid visible at once on short screens, e.g. a phone in landscape. */
+  width: min(100%, 670px, max(240px, 100svh - 24px));
   margin: 0 auto;
   border: 1px solid #d6dfd3;
   touch-action: none;
   user-select: none;
+  container-type: inline-size;
 }
 .letter-grid button {
   position: relative;
   aspect-ratio: 1;
+  min-width: 0;
+  min-height: 0;
+  line-height: 1;
+  overflow: hidden;
   border: 1px solid #dce3d9;
   background: #fffefa;
   color: #2a473b;
   font-weight: 700;
-  font-size: clamp(0.65rem, 2.6vw, 1.25rem);
+  /* Scale letters with the cell, not the viewport, so cells stay square. */
+  font-size: clamp(0.5rem, 100cqi / var(--size) * 0.45, 1.25rem);
   padding: 0;
   touch-action: none;
   user-select: none;
@@ -652,6 +660,15 @@ input:focus-visible {
     line-height: 1.4;
   }
 }
+@media (max-width: 800px) and (orientation: landscape) and (max-height: 520px) {
+  .game-layout {
+    grid-template-columns: minmax(0, auto) minmax(180px, 1fr);
+  }
+  .words {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .word-jump, .grid-jump { display: none; }
+}
 @media (max-width: 500px) {
   .brandmark {
     font-size: 1.55rem;
@@ -694,9 +711,6 @@ input:focus-visible {
   }
   .words > div {
     font-size: 0.74rem;
-  }
-  .letter-grid button {
-    font-size: clamp(0.5rem, 3vw, 0.9rem);
   }
   .grid-tip {
     font-size: 0.66rem;
@@ -751,6 +765,28 @@ input:focus-visible {
   color: #25483a;
   font-size: 0.83rem;
   font-weight: 700;
+}
+.selection-feedback:empty { display: none; }
+.game-message {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 10px 0 0;
+  padding: 8px 8px 8px 12px;
+  border-radius: 10px;
+  background: #eef3ec;
+  color: #25483a;
+  font-size: 0.83rem;
+  font-weight: 700;
+}
+.game-message button {
+  min-width: 36px;
+  min-height: 36px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: 1.15rem;
 }
 .hint-location {
   margin: 10px 0 0;

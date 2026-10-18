@@ -52,6 +52,8 @@
   let shellReady = false;
   let hintSaving = false;
   let markingWord = false;
+  let focusCell: Point = { row: 0, col: 0 };
+  let shownGameId: string | null = null;
 
   $: available = availableLevels(category);
   $: if (!available.includes(level)) level = available[0] ?? "let";
@@ -69,6 +71,12 @@
   $: nextSingleGame = active && !active.campaignId ? games.find((game) => !game.campaignId && !game.completed &&
     game.id !== active?.id && game.puzzle.category === active?.puzzle.category && game.puzzle.level === active?.puzzle.level) : undefined;
   $: activePending = active ? pendingGameIds.includes(active.id) : false;
+  $: if ((active?.id ?? null) !== shownGameId) {
+    shownGameId = active?.id ?? null;
+    focusCell = { row: 0, col: 0 };
+    // Start a newly opened game or the home page at the top instead of the previous scroll position.
+    void tick().then(() => window.scrollTo(0, 0));
+  }
 
   async function api(path: string, init?: RequestInit) {
     const response = await fetch(`/api${path}`, { credentials: "include", ...init, headers: { "Content-Type": "application/json", ...init?.headers } });
@@ -512,8 +520,9 @@
     const step = directions[event.key];
     if (step) {
       event.preventDefault();
-      const next = document.querySelector<HTMLButtonElement>(`[data-row="${Math.max(0, Math.min(active.puzzle.grid.length - 1, row + step.row))}"][data-col="${Math.max(0, Math.min(active.puzzle.grid.length - 1, col + step.col))}"]`);
-      next?.focus();
+      const last = active.puzzle.grid.length - 1;
+      focusCell = { row: Math.max(0, Math.min(last, row + step.row)), col: Math.max(0, Math.min(last, col + step.col)) };
+      document.querySelector<HTMLButtonElement>(`[data-row="${focusCell.row}"][data-col="${focusCell.col}"]`)?.focus();
     }
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
@@ -536,7 +545,7 @@
     hintSaving = true;
     try {
       if (await addMove({ id: newMoveId(), kind: "hint", word }, { found: active.found, hints: [...active.hints, word], completed: false }))
-        message = `Hint til ${word}: begynd i række ${location.start.row + 1}, kolonne ${location.start.col + 1}.`;
+        selectionFeedback = `Hint til ${word}: begynd i række ${location.start.row + 1}, kolonne ${location.start.col + 1}.`;
     } finally { hintSaving = false; }
   }
 
@@ -732,7 +741,7 @@
           <div class="letter-grid" id="letter-grid" tabindex="-1" style={`--size:${active.puzzle.grid.length}`} onpointerdown={pointerDown} onpointermove={pointerMove} onpointerup={pointerUp} onpointercancel={pointerCancel} onlostpointercapture={pointerCancel} role="group" aria-label="Bogstavgitter">
             {#each active.puzzle.grid as row, rowIndex (rowIndex)}
               {#each row as letter, colIndex (colIndex)}
-                <button class:found-cell={foundCells.some((cell) => cell.row === rowIndex && cell.col === colIndex)} class:hint-start={shownHint?.start.row === rowIndex && shownHint?.start.col === colIndex} class:preview-cell={selectedCells.some((cell) => cell.row === rowIndex && cell.col === colIndex)} class:preview-start={previewStart?.row === rowIndex && previewStart?.col === colIndex} class:preview-end={previewEnd?.row === rowIndex && previewEnd?.col === colIndex && (previewStart?.row !== rowIndex || previewStart?.col !== colIndex)} class:rejected-cell={rejectedStart !== null && dragStart === null && selectedCells.some((cell) => cell.row === rowIndex && cell.col === colIndex)} class:tap-start={selectedStart?.row === rowIndex && selectedStart?.col === colIndex} data-row={rowIndex} data-col={colIndex} onkeydown={(event) => keyCell(event, rowIndex, colIndex)} aria-label={`Række ${rowIndex + 1}, kolonne ${colIndex + 1}, ${letter}${shownHint?.start.row === rowIndex && shownHint?.start.col === colIndex ? `, startfelt for hint til ${shownHint.word}` : ""}${selectedStart?.row === rowIndex && selectedStart?.col === colIndex ? ", valgt startfelt" : ""}`}><span>{letter}</span></button>
+                <button class:found-cell={foundCells.some((cell) => cell.row === rowIndex && cell.col === colIndex)} class:hint-start={shownHint?.start.row === rowIndex && shownHint?.start.col === colIndex} class:preview-cell={selectedCells.some((cell) => cell.row === rowIndex && cell.col === colIndex)} class:preview-start={previewStart?.row === rowIndex && previewStart?.col === colIndex} class:preview-end={previewEnd?.row === rowIndex && previewEnd?.col === colIndex && (previewStart?.row !== rowIndex || previewStart?.col !== colIndex)} class:rejected-cell={rejectedStart !== null && dragStart === null && selectedCells.some((cell) => cell.row === rowIndex && cell.col === colIndex)} class:tap-start={selectedStart?.row === rowIndex && selectedStart?.col === colIndex} data-row={rowIndex} data-col={colIndex} tabindex={focusCell.row === rowIndex && focusCell.col === colIndex ? 0 : -1} onfocus={() => focusCell = { row: rowIndex, col: colIndex }} onkeydown={(event) => keyCell(event, rowIndex, colIndex)} aria-label={`Række ${rowIndex + 1}, kolonne ${colIndex + 1}, ${letter}${shownHint?.start.row === rowIndex && shownHint?.start.col === colIndex ? `, startfelt for hint til ${shownHint.word}` : ""}${selectedStart?.row === rowIndex && selectedStart?.col === colIndex ? ", valgt startfelt" : ""}`}><span>{letter}</span></button>
               {/each}
             {/each}
             {#if previewStart && previewEnd && (previewStart.row !== previewEnd.row || previewStart.col !== previewEnd.col)}
@@ -740,8 +749,9 @@
             {/if}
           </div>
           <p class="grid-tip">Træk fra første til sidste bogstav, eller tryk på de to ender. Brug piletasterne på tastatur.</p>
-          {#if shownHint}<p class="hint-location">Hint til {shownHint.word}: begynd i række {shownHint.start.row + 1}, kolonne {shownHint.start.col + 1}. Det blå felt viser starten.</p>{/if}
-          {#if selectionFeedback}<p class="selection-feedback">{selectionFeedback}</p>{/if}
+          {#if shownHint && selectionFeedback !== `Hint til ${shownHint.word}: begynd i række ${shownHint.start.row + 1}, kolonne ${shownHint.start.col + 1}.`}<p class="hint-location">Hint til {shownHint.word}: begynd i række {shownHint.start.row + 1}, kolonne {shownHint.start.col + 1}. Det blå felt viser starten.</p>{/if}
+          <p class="selection-feedback" role="status">{selectionFeedback}</p>
+          {#if message && message !== selectionFeedback}<div class="game-message" role="status"><span>{message}</span><button aria-label="Luk besked" onclick={() => message = ""}>×</button></div>{/if}
           {#if !active.completed}
             <div class="hint-controls"><button class="secondary hint-button" onclick={hint} disabled={hintSaving || hintsRemaining(active.puzzle.level, active.hints) === 0}>Vis et hint</button><span>Hints tilbage: {hintsRemaining(active.puzzle.level, active.hints)}/{HINT_LIMIT[active.puzzle.level]}</span></div>
             {#if hintsRemaining(active.puzzle.level, active.hints) === 0}<p class="hint-explanation">Alle hints på denne bane er brugt.</p>{/if}
@@ -754,5 +764,5 @@
       </div>
     {/if}
   {/if}
-  {#if message}<div class="toast" role="status"><span>{message}</span><button aria-label="Luk besked" onclick={() => message = ""}>×</button></div>{/if}
+  {#if message && !active}<div class="toast" role="status"><span>{message}</span><button aria-label="Luk besked" onclick={() => message = ""}>×</button></div>{/if}
 </main>
