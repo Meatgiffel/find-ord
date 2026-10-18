@@ -869,7 +869,7 @@
       <form onsubmit={(event) => { event.preventDefault(); void createFirstAdmin(); }}>
         <label>Opsætningskode<input bind:value={setupToken} autocomplete="off" required /></label>
         {#if !setupToken}<p class="muted">Koden står i serverens log, fx med <code>docker compose logs find-ord</code>.</p>{/if}
-        <label>Brugernavn<input autocomplete="username" bind:value={username} pattern={"[A-Za-z0-9_.-]{3,30}"} required /></label>
+        <label>Brugernavn<input autocomplete="username" bind:value={username} pattern={"[A-Za-z0-9_.\\-]{3,30}"} required /></label>
         <label>Visningsnavn<input bind:value={setupName} maxlength="80" required /></label>
         <label>Adgangskode<input type="password" autocomplete="new-password" minlength="8" bind:value={password} required /></label>
         <button class="primary" disabled={busy || !online} type="submit">{busy ? "Opretter…" : "Opret administrator"}</button>
@@ -996,7 +996,7 @@
               </span>{/if}
             </div>{/each}</div>
             <form class="account-form" onsubmit={(event) => { event.preventDefault(); void createAccount(); }}>
-              <label>Navn<input bind:value={newName} required /></label><label>Brugernavn<input bind:value={newUser} pattern={"[A-Za-z0-9_.-]{3,30}"} required /></label><label>Adgangskode<input type="password" minlength="8" bind:value={newPassword} required /></label><label class="checkbox"><input type="checkbox" bind:checked={newChild} /> Børneprofil (under gennemgang)</label><button class="secondary" type="submit">Opret spiller</button>
+              <label>Navn<input bind:value={newName} required /></label><label>Brugernavn<input bind:value={newUser} pattern={"[A-Za-z0-9_.\\-]{3,30}"} required /></label><label>Adgangskode<input type="password" minlength="8" bind:value={newPassword} required /></label><label class="checkbox"><input type="checkbox" bind:checked={newChild} /> Børneprofil</label><button class="secondary" type="submit">Opret spiller</button>
             </form>
           {/if}
         </details>
