@@ -23,7 +23,7 @@ export const BLOCKED_SEQUENCES = [
 // SKIPPERLABSKOVS read backwards.
 const approvedWords = [...new Set((Object.keys(CATEGORIES) as CategoryId[]).flatMap((category) => categoryWords(category, true))
   .flatMap((word) => [word, [...word].reverse().join("")]))];
-const EXCEPTIONS = new Map(BLOCKED_SEQUENCES.map((sequence) => [sequence, approvedWords.flatMap((word) => {
+const EXCEPTIONS = new Map<string, Array<{ word: string; offset: number }>>(BLOCKED_SEQUENCES.map((sequence) => [sequence, approvedWords.flatMap((word) => {
   const offsets: Array<{ word: string; offset: number }> = [];
   for (let offset = word.indexOf(sequence); offset >= 0; offset = word.indexOf(sequence, offset + 1)) offsets.push({ word, offset });
   return offsets;
