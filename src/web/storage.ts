@@ -62,6 +62,18 @@ export async function saveGame(owner: string, game: Omit<StoredGame, "id" | "own
   await local.games.put({ ...game, id: game.puzzle.id, owner, approvedAtDownload: true, updatedAt: Date.now() });
 }
 
+// Add server games that are missing on this device, within the offline limit.
+export async function saveMissingGames(owner: string, games: Array<Omit<StoredGame, "id" | "owner" | "updatedAt" | "approvedAtDownload">>, max = MAX_OFFLINE_GAMES): Promise<number> {
+  let added = 0;
+  for (const game of games) {
+    if (await local.games.get(game.puzzle.id)) continue;
+    if (await local.games.where("owner").equals(owner).count() >= max) break;
+    await saveGame(owner, game);
+    added++;
+  }
+  return added;
+}
+
 export async function saveCampaign(owner: string, campaign: DownloadedCampaign): Promise<void> {
   if (campaign.games.some((game) => game.campaignId !== campaign.id || game.puzzle.level !== campaign.level ||
     !Number.isInteger(game.campaignPosition) || (game.campaignPosition ?? 0) < 1 || validatePuzzle(game.puzzle))) {

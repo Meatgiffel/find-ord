@@ -115,7 +115,10 @@ app.post("/api/games", async (req, res) => {
 
 app.get("/api/games", async (req, res) => {
   const current = await user(req, res); if (!current) return;
-  const rows = db.prepare("SELECT * FROM game WHERE user_id = ? ORDER BY created_at DESC LIMIT 30").all(current.id) as GameRow[];
+  // Unfinished single games, so another device or a new login can continue them.
+  // Campaign games are delivered through /api/campaigns.
+  const rows = db.prepare(`SELECT * FROM game WHERE user_id = ? AND completed = 0
+    AND id NOT IN (SELECT game_id FROM campaign_game) ORDER BY created_at DESC LIMIT 30`).all(current.id) as GameRow[];
   const games = rows.map(serializedGame);
   const isChild = childFor(current.id);
   res.json(games.filter((game) => game.puzzle.child === isChild && validatePuzzle(game.puzzle) === null));

@@ -88,6 +88,9 @@ describe("HTTP-adgangskontrol", () => {
       expect(create.status).toBe(201);
       const created = await create.json() as { puzzle: { id: string } };
       expect((await fetch(`${baseURL}/api/games/${created.puzzle.id}`, { headers: { Cookie: alice } })).status).toBe(200);
+      const listed = async (cookie: string) => (await (await fetch(`${baseURL}/api/games`, { headers: { Cookie: cookie } })).json() as Array<{ puzzle: { id: string } }>).map((game) => game.puzzle.id);
+      expect(await listed(alice)).toEqual([created.puzzle.id]);
+      expect(await listed(bob)).toEqual([]);
       expect((await fetch(`${baseURL}/api/games/${created.puzzle.id}`, { headers: { Cookie: bob } })).status).toBe(404);
       expect((await fetch(`${baseURL}/api/games/${created.puzzle.id}/sync`, {
         method: "POST", headers: { Origin: baseURL, Cookie: bob, "Content-Type": "application/json" },

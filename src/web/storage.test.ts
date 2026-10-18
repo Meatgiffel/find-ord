@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { makePuzzle, findWord } from "../shared/game.js";
-import { approveDownloadedGame, clearPendingServerLogout, eraseLocal, local, matchesServerVersions, offlineSignOut, pendingServerLogout, isQuotaError, pruneOfflineGames, reconcileDownloadedGames, recordMove, removeDownloadedGame, retireDownloadedGame, saveCampaign, saveGame, usableOffline } from "./storage.js";
+import { approveDownloadedGame, clearPendingServerLogout, eraseLocal, local, matchesServerVersions, offlineSignOut, pendingServerLogout, isQuotaError, pruneOfflineGames, saveMissingGames, reconcileDownloadedGames, recordMove, removeDownloadedGame, retireDownloadedGame, saveCampaign, saveGame, usableOffline } from "./storage.js";
 
 const versions = { rules: 1, validation: 1, words: 1, categories: 1, childPolicy: 2 };
 
@@ -181,6 +181,16 @@ describe("lokal offlinelagring", () => {
     expect((await local.games.toArray()).map((game) => game.id).sort()).toEqual([ids[0], ids[3], ids[4]].sort());
     expect(await pruneOfflineGames("alice", 1)).toBe(3);
     expect(await local.moves.get("late-sync")).toBeDefined();
+  });
+
+  it("henter manglende serverbaner uden at overskrive lokal fremdrift eller overskride loftet", async () => {
+    const local1 = makePuzzle("device-a", "dyr", "let", 81);
+    await saveGame("alice", { puzzle: local1, found: [local1.words[0]], hints: [], completed: false });
+    const server = [81, 83, 85].map((seed, index) => ({ puzzle: index ? makePuzzle(`server-${index}`, "dyr", "let", seed) : local1, found: [], hints: [], completed: false }));
+    expect(await saveMissingGames("alice", server, 2)).toBe(1);
+    expect((await local.games.get(local1.id))?.found).toEqual([local1.words[0]]);
+    expect(await local.games.get("server-1")).toBeDefined();
+    expect(await local.games.get("server-2")).toBeUndefined();
   });
 
   it("genkender fuld lagerplads, også når Dexie pakker fejlen ind", () => {

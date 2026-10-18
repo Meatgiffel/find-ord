@@ -39,7 +39,7 @@ Alle endpoints nedenfor bruger cookie-session, bortset fra login. Ændrende app-
 | `GET /api/me` | — | Konto-ID, navn, rolle, serverens `child` og `puzzleVersions` for regler, validering, ord, kategoritags og børnepolitik. |
 | `GET /api/categories` | — | Kategori-ID, navn og aktuelt tilgængelige niveauer. Kræver login. |
 | `POST /api/games` | `{category, level}` | `201` med `{puzzle, found: [], hints: [], completed: false, revision: 0}`. Serveren bruger sessionens konto og børneflag og validerer kombinationen. |
-| `GET /api/games` | — | Højst 30 af kontoens seneste baner med pakke og fremdrift. |
+| `GET /api/games` | — | Højst 30 af kontoens seneste uafsluttede enkeltbaner med pakke og fremdrift, så en anden enhed eller et nyt login kan fortsætte dem. Kampagnebaner leveres via `/api/campaigns`. |
 | `GET /api/games/:id` | — | Kun ejerens bane; `410` hvis kategori, ord eller sikkerhedspolitik gør den ugyldig. |
 | `POST /api/games/:id/sync` | `{events: Move[]}`, højst 500 | `200` med `{found, hints, completed, revision, acknowledged, rejected}` efter servervalidering. Se hændelsesformatet nedenfor. Accepteres også for ejerens udgåede bane, så offlinefremdrift ikke tabes; svaret indeholder intet baneindhold. Klienten skjuler en udgået bane med usynkroniserede træk og sletter den først, når trækkene er kvitteret. |
 | `GET /api/achievements` | — | Serverberegnet liste over kontoens achievements og fremdrift. |

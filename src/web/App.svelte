@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { authClient } from "./auth.js";
-  import { local, recordMove, saveGame, saveCampaign, eraseLocal, offlineSignOut, pendingServerLogout, clearPendingServerLogout, approveDownloadedGame, reconcileDownloadedGames, removeDownloadedGame, retireDownloadedGame, usableOffline, pruneOfflineGames, requestPersistentStorage, isQuotaError, MAX_OFFLINE_GAMES, type DownloadedCampaign, type PuzzleVersions, type StoredCampaign, type StoredGame, type StoredIdentity } from "./storage.js";
+  import { local, recordMove, saveGame, saveCampaign, eraseLocal, offlineSignOut, pendingServerLogout, clearPendingServerLogout, approveDownloadedGame, reconcileDownloadedGames, removeDownloadedGame, retireDownloadedGame, usableOffline, pruneOfflineGames, saveMissingGames, requestPersistentStorage, isQuotaError, MAX_OFFLINE_GAMES, type DownloadedCampaign, type PuzzleVersions, type StoredCampaign, type StoredGame, type StoredIdentity } from "./storage.js";
   import { CATEGORIES, LEVELS, availableLevels, campaignLevels, directionDescription, type CategoryId, type LevelId } from "../shared/words.js";
   import { cellsBetween, findWord, HINT_LIMIT, hintsRemaining, visibleHint, wordAt, type Move, type Point, type Puzzle } from "../shared/game.js";
   import { snapDragEnd } from "./drag.js";
@@ -616,6 +616,7 @@
       }
       await refreshLocal();
       online = true;
+      if (await saveMissingGames(identity.id, await api("/games"))) await refreshLocal();
       const serverCampaigns = await api("/campaigns") as DownloadedCampaign[];
       for (const campaign of serverCampaigns) {
         const ready = games.filter((game) => game.campaignId === campaign.id && !game.completed).length;
