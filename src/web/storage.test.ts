@@ -1,4 +1,5 @@
 import "fake-indexeddb/auto";
+import Dexie from "dexie";
 import { beforeEach, describe, expect, it } from "vitest";
 import { makePuzzle, findWord } from "../shared/game.js";
 import { approveDownloadedGame, clearPendingServerLogout, eraseLocal, local, matchesServerVersions, offlineSignOut, pendingServerLogout, isQuotaError, pruneOfflineGames, saveMissingGames, reconcileDownloadedGames, recordMove, removeDownloadedGame, retireDownloadedGame, saveCampaign, saveGame, usableOffline } from "./storage.js";
@@ -191,6 +192,22 @@ describe("lokal offlinelagring", () => {
     expect((await local.games.get(local1.id))?.found).toEqual([local1.words[0]]);
     expect(await local.games.get("server-1")).toBeDefined();
     expect(await local.games.get("server-2")).toBeUndefined();
+  });
+
+  it("bevarer baner og usynkroniserede træk ved opgradering fra første lokale skema", async () => {
+    const puzzle = makePuzzle("schema-v1", "dyr", "let", 89);
+    local.close();
+    await Dexie.delete("find-ord");
+    const old = new Dexie("find-ord");
+    old.version(1).stores({ games: "id,owner,updatedAt", moves: "id,gameId,owner,createdAt", identity: "key" });
+    await old.table("games").put({ id: puzzle.id, owner: "alice", puzzle, found: [], hints: [], completed: false, updatedAt: 1 });
+    await old.table("moves").put({ id: "old-move", gameId: puzzle.id, owner: "alice", kind: "hint", word: puzzle.words[0], createdAt: 1, sequence: 1 });
+    old.close();
+    await local.open();
+    expect(local.verno).toBe(4);
+    expect((await local.games.get(puzzle.id))?.owner).toBe("alice");
+    expect(await local.moves.get("old-move")).toBeDefined();
+    expect(await local.campaigns.count()).toBe(0);
   });
 
   it("genkender fuld lagerplads, også når Dexie pakker fejlen ind", () => {
