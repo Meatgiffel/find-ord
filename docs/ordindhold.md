@@ -54,7 +54,7 @@ Regler for tvetydige ord og bøjninger:
 - En kategori må gerne have beslægtede underemner, fx dyreunger under Dyr. Der skal dog være en tydelig sammenhæng med kategoriens navn.
 - Kategori og børneegnethed er adskilte. At et ord står under Mad, gør det ikke godkendt til børn.
 
-Hvert niveau har en minimumslængde og en maksimumslængde for ordene. Et niveau tilbydes kun i en kategori, når kategorien har mindst så mange ord med en tilladt længde, som en bane bruger. Det gælder for hver profiltype for sig. Børn får aldrig voksenlisten i stedet. Er der for få ord, bliver niveauet skjult for den profil. Dækningen pr. kategori, niveau og profiltype står i ordrapporten.
+Niveauet styrer ordlængde, gitterstørrelse, antal ord og retninger, men ikke ordklassen. Ordklassen bestemmes af kategorilisterne, som mest består af navneord og nogle få tillægsord og udsagnsord (fx KLART og LØBE). Hvert niveau har en minimumslængde og en maksimumslængde for ordene. Et niveau tilbydes kun i en kategori, når kategorien har mindst så mange ord med en tilladt længde, som en bane bruger. Det gælder for hver profiltype for sig. Børn får aldrig voksenlisten i stedet. Er der for få ord, bliver niveauet skjult for den profil. Dækningen pr. kategori, niveau og profiltype står i ordrapporten.
 
 ## Børnepolitik (version 3)
 
