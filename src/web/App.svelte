@@ -501,8 +501,11 @@
       selectionFeedback = message;
     } finally { markingWord = false; }
   }
+  // Markings are handled one at a time, so a word marked while the previous one is
+  // still being saved waits instead of being dropped.
+  let markQueue: Promise<void> = Promise.resolve();
   function submitWord(start: Point, end: Point) {
-    void markWord(start, end).catch(() => {
+    markQueue = markQueue.then(() => markWord(start, end)).catch(() => {
       selectionFeedback = "Kunne ikke registrere ordet. Prøv igen.";
       message = selectionFeedback;
     });
@@ -1003,7 +1006,9 @@
         <details class="card secondary-panel" ontoggle={(event) => { if ((event.currentTarget as HTMLDetailsElement).open && !wordAdmin) void loadWordAdmin(); }}><summary>Ordlister</summary>
           {#if wordAdmin}
             <p class="muted">Ordliste v{wordAdmin.versions.words} · kategorier v{wordAdmin.versions.categories} · børnepolitik v{wordAdmin.versions.childPolicy} · validering v{wordAdmin.versions.validation} · COR {wordAdmin.versions.cor} · {wordAdmin.blockedSequences} blokerede sekvenser. Listerne ændres i koden efter den redaktionelle procedure i <code>docs/ordindhold.md</code>; git er historikken, og rollback sker med en tidligere udgave.</p>
-            <div class="table-scroll"><table class="coverage-table"><caption>Dækning: ord med niveauets længde, voksen / barn</caption>
+            <!-- A scrollable region must be reachable by keyboard (axe: scrollable-region-focusable). -->
+            <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+            <div class="table-scroll" tabindex="0" role="region" aria-label="Dækning pr. kategori og niveau"><table class="coverage-table"><caption>Dækning: ord med niveauets længde, voksen / barn</caption>
               <thead><tr><th scope="col">Kategori</th>{#each Object.entries(LEVELS) as [id, item] (id)}<th scope="col">{item.name}<small> ({item.words})</small></th>{/each}</tr></thead>
               <tbody>{#each wordAdmin.coverage as row (row.category)}<tr><th scope="row">{row.name}</th>{#each Object.keys(LEVELS) as id (id)}{@const cell = row.levels[id]}<td class:closed={!cell.adultOpen || !cell.childOpen}>{cell.adult} / {cell.child}{#if !cell.childOpen}<small> lukket for børn</small>{/if}{#if !cell.adultOpen}<small> lukket</small>{/if}</td>{/each}</tr>{/each}</tbody></table></div>
             <div class="word-filters">
@@ -1012,7 +1017,9 @@
               <label>Børn<select bind:value={wordChild}><option value="">Alle</option><option value="ja">Godkendt</option><option value="nej">Kun voksne</option></select></label>
             </div>
             <p class="muted" aria-live="polite">{shownWords.length} af {wordAdmin.words.length} tilknytninger{shownWords.length > 200 ? " (de første 200 vises)" : ""}.</p>
-            <div class="table-scroll"><table class="word-table"><thead><tr><th scope="col">Ord</th><th scope="col">Kategori</th><th scope="col">Børn</th><th scope="col">Læseniveau</th><th scope="col">COR-kilde</th></tr></thead>
+            <!-- A scrollable region must be reachable by keyboard (axe: scrollable-region-focusable). -->
+            <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+            <div class="table-scroll" tabindex="0" role="region" aria-label="Ord og kilder"><table class="word-table"><thead><tr><th scope="col">Ord</th><th scope="col">Kategori</th><th scope="col">Børn</th><th scope="col">Læseniveau</th><th scope="col">COR-kilde</th></tr></thead>
               <tbody>{#each shownWords.slice(0, 200) as item (`${item.category}/${item.word}`)}<tr><td>{item.word}</td><td>{CATEGORIES[item.category].name}</td><td>{item.child ? "Godkendt" : `Nej: ${item.reason}`}</td><td>{item.readingLevel}</td><td><small>{item.sources.join(", ") || "mangler"}</small></td></tr>{/each}</tbody></table></div>
           {:else}<p class="muted">{wordAdminError || "Henter ordlisterne…"}</p>{/if}
         </details>
