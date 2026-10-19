@@ -9,6 +9,9 @@
   import { newMoveId } from "./ids.js";
   import { ACHIEVEMENT_ICONS, nextGoals, type Achievement } from "../shared/achievements.js";
   import { START_CREDITS, type ChallengeState } from "../shared/challenges.js";
+  import Icon from "./Icon.svelte";
+
+  type Pill = { tone: "ok" | "warn" | "neutral" | "info"; icon: "cloud" | "sync" | "device" | "check"; text: string; short: string };
 
   type Identity = Omit<StoredIdentity, "key">;
   type ServerIdentity = Identity & { puzzleVersions: PuzzleVersions };
@@ -100,6 +103,136 @@
   let storagePersisted = true;
   const QUOTA_MESSAGE = "Der er ikke plads på enheden til at gemme mere. Frigør plads, eller synkronisér og gennemfør hentede baner.";
   let shownGameId: string | null = null;
+  let viewportW = window.innerWidth;
+  let viewportH = window.innerHeight;
+  let stageWidth = 0;
+  let gridViewport: HTMLDivElement | undefined;
+  let gridInner: HTMLDivElement | undefined;
+  let singleCard: HTMLElement | undefined;
+  let accountPanel: HTMLDetailsElement | undefined;
+  let abandonDialog: HTMLDivElement | undefined;
+  let confirmAbandon = false;
+  let showPassword = false;
+  let levelNote = "";
+  let campaignNote = "";
+  let creating: { title: string; meta: string; size: number; heading: string; text: string } | null = null;
+  // Short feedback over the grid; the same text goes to the live region.
+  let gridToast: { kind: "ok" | "bad" | "info"; text: string } | null = null;
+  let toastTimer: ReturnType<typeof setTimeout> | null = null;
+  // Large boards on narrow screens show a movable window ("Tæt på") or the whole board for orientation.
+  let overview = false;
+  let view = { r0: 0, c0: 0 };
+  let lastPointer: { x: number; y: number } | null = null;
+  let edgeTimer: ReturnType<typeof setInterval> | null = null;
+
+  const levelIds = Object.keys(LEVELS) as LevelId[];
+  const ARROWS = ["→", "↓", "←", "↑", "↘", "↙", "↗", "↖"];
+  const DIRECTION_SHORT: Record<number, string> = { 2: "mod højre og nedad", 4: "vandret og lodret", 8: "alle 8 retninger" };
+  const directionArrows = (id: LevelId) => ARROWS.slice(0, LEVELS[id].directions).join(" ");
+  const avatarTint = (id: string | null | undefined) => id ? Math.max(0, Object.keys(AVATARS).indexOf(id)) % 5 : 0;
+
+  $: size = active?.puzzle.grid.length ?? 8;
+  $: wide = viewportW >= 760;
+  $: shortLandscape = viewportH <= 520 && viewportW > viewportH;
+  $: split = wide || shortLandscape;
+  $: roomy = wide && !shortLandscape;
+  // The grid's side length: the phone's width, the height of a landscape phone, or what is left beside the word list.
+  $: gridBox = Math.floor(shortLandscape ? Math.min(viewportH - 24, viewportW * 0.5)
+    : wide ? Math.min(viewportW - 48 - 240 - 24, 760, Math.max(280, viewportH - 120))
+    : Math.min(stageWidth || viewportW - 32, Math.max(240, viewportH - 160)));
+  $: zoomable = size > 8 && gridBox / size < 24;
+  $: viewCells = zoomable ? Math.min(size, Math.max(6, Math.floor(gridBox / 35))) : size;
+  $: zoomed = zoomable && !overview;
+  $: shownCells = zoomed ? viewCells : size;
+  $: cellPx = Math.max(12, Math.floor(gridBox / shownCells * 10) / 10);
+  $: panStep = Math.ceil(viewCells / 2);
+  $: view = clampView(view, size, viewCells);
+
+  $: foundCaps = active ? active.puzzle.words.flatMap((word, index) => {
+    const path = active!.found.includes(word) ? findWord(active!.puzzle, word) : null;
+    return path ? [{ word, color: index % 5, ...path }] : [];
+  }) : [];
+  $: missedCaps = active?.abandoned ? active.puzzle.words.flatMap((word) => {
+    const path = active!.found.includes(word) ? null : findWord(active!.puzzle, word);
+    return path ? [{ word, ...path }] : [];
+  }) : [];
+  $: nearestGoal = challengeInfo?.challenges.filter((goal) => !goal.completed)
+    .sort((a, b) => (b.progress / b.target) - (a.progress / a.target))[0];
+  $: savedSingles = games.filter((game) => !game.campaignId);
+  $: campaignForLevel = campaigns.find((item) => item.level === campaignLevel);
+  $: readyInCampaign = campaignForLevel ? games.filter((game) => game.campaignId === campaignForLevel!.id && !game.completed).length : 0;
+  $: syncPill = (pending
+    ? { tone: "warn", icon: "sync", text: `Afventer synkronisering · ${pending} træk`, short: `${pending} træk venter` }
+    : online && !sessionExpired ? { tone: "ok", icon: "cloud", text: "Alt er synkroniseret", short: "Synkroniseret" }
+    : { tone: "neutral", icon: "device", text: "Gemt på enheden", short: "Gemt" }) as Pill;
+  $: gamePill = (activePending
+    ? { tone: "warn", icon: "sync", text: `Afventer synkronisering · ${pending} træk`, short: `${pending} træk venter` }
+    : online && !sessionExpired ? { tone: "ok", icon: "cloud", text: "Synkroniseret", short: "Synkroniseret" }
+    : { tone: "neutral", icon: "device", text: "Gemt på enheden", short: "Gemt" }) as Pill;
+
+  function clampView(next: { r0: number; c0: number }, boardSize: number, cells: number) {
+    const max = Math.max(0, boardSize - cells);
+    const r0 = Math.max(0, Math.min(max, next.r0)), c0 = Math.max(0, Math.min(max, next.c0));
+    return r0 === next.r0 && c0 === next.c0 ? next : { r0, c0 };
+  }
+  function pan(rows: number, cols: number) {
+    view = clampView({ r0: view.r0 + rows, c0: view.c0 + cols }, size, viewCells);
+  }
+  function centerView(point: Point) {
+    view = clampView({ r0: point.row - Math.floor(viewCells / 2), c0: point.col - Math.floor(viewCells / 2) }, size, viewCells);
+  }
+  function ensureVisible(point: Point) {
+    if (!zoomed) return;
+    let { r0, c0 } = view;
+    if (point.row < r0) r0 = point.row;
+    if (point.row >= r0 + viewCells) r0 = point.row - viewCells + 1;
+    if (point.col < c0) c0 = point.col;
+    if (point.col >= c0 + viewCells) c0 = point.col - viewCells + 1;
+    view = clampView({ r0, c0 }, size, viewCells);
+  }
+  function pickOverview(point: Point) {
+    overview = false;
+    focusCell = point;
+    centerView(point);
+  }
+  function miniClick(event: MouseEvent) {
+    overview = false;
+    // Activated from the keyboard: step through the four corners.
+    if (event.detail === 0) {
+      const max = size - viewCells;
+      const corners = [{ r0: 0, c0: 0 }, { r0: 0, c0: max }, { r0: max, c0: max }, { r0: max, c0: 0 }];
+      const at = corners.findIndex((item) => item.r0 === view.r0 && item.c0 === view.c0);
+      view = corners[(at + 1) % corners.length];
+      return;
+    }
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    centerView({ row: Math.floor((event.clientY - rect.top) / rect.height * size), col: Math.floor((event.clientX - rect.left) / rect.width * size) });
+  }
+  function capsule(start: Point, end: Point) {
+    const x1 = start.col + 0.5, y1 = start.row + 0.5, x2 = end.col + 0.5, y2 = end.row + 0.5, h = 0.84;
+    return { cx: (x1 + x2) / 2, cy: (y1 + y2) / 2, w: Math.hypot(x2 - x1, y2 - y1) + h, h, angle: Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI };
+  }
+  function flash(kind: "ok" | "bad" | "info", text: string, spoken = text) {
+    if (toastTimer) clearTimeout(toastTimer);
+    gridToast = { kind, text };
+    selectionFeedback = spoken;
+    toastTimer = setTimeout(() => { gridToast = null; }, 1800);
+  }
+  function leaveGame() {
+    active = null; selectedStart = null; message = ""; confirmAbandon = false;
+  }
+  async function openAccount() {
+    leaveGame();
+    await tick();
+    if (!accountPanel) return;
+    accountPanel.open = true;
+    accountPanel.scrollIntoView({ block: "start" });
+    accountPanel.querySelector("summary")?.focus();
+  }
+  async function focusSingle() {
+    singleCard?.scrollIntoView({ block: "start" });
+    singleCard?.focus();
+  }
 
   $: childProfile = identity?.child ?? false;
   $: available = category === "surprise" ? campaignLevels(childProfile) : availableLevels(category, childProfile);
@@ -122,6 +255,10 @@
     shownGameId = active?.id ?? null;
     newAchievements = [];
     focusCell = { row: 0, col: 0 };
+    view = { r0: 0, c0: 0 };
+    overview = false;
+    confirmAbandon = false;
+    gridToast = null;
     // Start a newly opened game or the home page at the top instead of the previous scroll position.
     void tick().then(() => window.scrollTo(0, 0));
   }
@@ -335,6 +472,13 @@
     const chosenCategory = requestedCategory === "surprise" ? surpriseCategory(chosenLevel, Math.random, childProfile) : requestedCategory;
     if (!chosenCategory) { message = "Ingen kategori kan danne en bane på dette niveau endnu."; return; }
     busy = true; message = "";
+    creating = {
+      title: requestedCategory === "surprise" ? "Overrask mig" : CATEGORIES[chosenCategory].name,
+      meta: `${LEVELS[chosenLevel].name} · ${LEVELS[chosenLevel].size}×${LEVELS[chosenLevel].size}`,
+      size: LEVELS[chosenLevel].size,
+      heading: "Danner bane…",
+      text: `Vi lægger ${LEVELS[chosenLevel].words} ord om ${CATEGORIES[chosenCategory].name.toLocaleLowerCase("da-DK")} ind i gitteret.`
+    };
     try {
       if (!await refreshConnectedAccount() || !identity) return;
       if (await pruneOfflineGames(identity.id, MAX_OFFLINE_GAMES - 1) >= MAX_OFFLINE_GAMES) {
@@ -349,9 +493,10 @@
       storagePersisted = await requestPersistentStorage();
       await refreshLocal();
       active = games.find((item) => item.id === game.puzzle.id) ?? null;
-      message = shellReady ? "Banen er gemt og klar offline." : "Banen er gemt. Vent på, at appen bliver klar til offlinebrug.";
+      if (shellReady) selectionFeedback = "Banen er gemt og klar offline.";
+      else message = "Banen er gemt. Vent på, at appen bliver klar til offlinebrug.";
     } catch (cause) { message = isQuotaError(cause) ? QUOTA_MESSAGE : cause instanceof Error ? cause.message : "Banen kunne ikke hentes."; }
-    finally { busy = false; }
+    finally { busy = false; creating = null; }
   }
 
   async function storeCampaign(bundle: DownloadedCampaign) {
@@ -365,15 +510,23 @@
   async function startCampaignFlow() {
     if (!identity || !online) { message = "En ny kampagne kræver forbindelse til serveren."; return; }
     busy = true; message = "";
+    creating = {
+      title: "Endeløs kampagne",
+      meta: `${LEVELS[campaignLevel].name} · ${LEVELS[campaignLevel].size}×${LEVELS[campaignLevel].size}`,
+      size: LEVELS[campaignLevel].size,
+      heading: "Henter baner…",
+      text: "De næste baner hentes og gemmes på enheden, så du kan spille dem offline."
+    };
     try {
       if (!await refreshConnectedAccount() || !identity) return;
       const bundle = await api("/campaigns", { method: "POST", body: JSON.stringify({ level: campaignLevel }) }) as DownloadedCampaign;
       await storeCampaign(bundle);
       active = games.filter((game) => game.campaignId === bundle.id && !game.completed)
         .sort((a, b) => (a.campaignPosition ?? 0) - (b.campaignPosition ?? 0))[0] ?? null;
-      message = active ? "Kampagnebanerne er hentet og klar offline." : "Der er ingen bane klar endnu. Prøv igen med forbindelse.";
+      if (active) selectionFeedback = "Kampagnebanerne er hentet og klar offline.";
+      else message = "Der er ingen bane klar endnu. Prøv igen med forbindelse.";
     } catch (cause) { message = isQuotaError(cause) ? QUOTA_MESSAGE : cause instanceof Error ? cause.message : "Kampagnen kunne ikke hentes."; }
-    finally { busy = false; }
+    finally { busy = false; creating = null; }
   }
 
   async function openCampaign(campaign: StoredCampaign) {
@@ -466,7 +619,7 @@
     clearRejection();
     rejectedStart = start;
     rejectedEnd = end;
-    rejectionTimer = setTimeout(clearRejection, 750);
+    rejectionTimer = setTimeout(clearRejection, 1800);
   }
 
   async function markWord(start: Point, end: Point) {
@@ -475,30 +628,31 @@
     if (!word || active.found.includes(word)) {
       const path = cellsBetween(start, end);
       const letters = path?.map(({ row, col }) => active!.puzzle.grid[row]?.[col] ?? "").join("") ?? "";
-      selectionFeedback = word ? "Det ord er allerede fundet." : path
-        ? `Markeret: ${letters}. Det er ikke et ord på listen.`
-        : "Markér et ord på en lige linje.";
-      message = selectionFeedback;
-      if (path) showRejection(start, end);
+      if (word) flash("info", `${word} er allerede fundet`);
+      else if (path) {
+        flash("bad", "✕ Ikke et ord – prøv igen", `Markeret: ${letters}. Det er ikke et ord på listen.`);
+        showRejection(start, end);
+      } else flash("bad", "Markér på en lige linje", "Markér et ord på en lige linje.");
       return;
     }
     markingWord = true;
     try {
       const found = [...active.found, word];
       if (!await addMove({ id: newMoveId(), kind: "find", word, start, end }, { found, hints: active.hints, completed: false })) {
-        selectionFeedback = message;
+        selectionFeedback = "";
         return;
       }
       if (found.length === active.puzzle.words.length && active) {
         if (!await addMove({ id: newMoveId(), kind: "complete" }, { found, hints: active.hints, completed: true })) {
-          selectionFeedback = message;
+          selectionFeedback = "";
           return;
         }
-        message = online ? "Alle ord fundet! Resultatet synkroniseres." : "Alle ord fundet! Resultatet gemmes på serveren, når der er forbindelse.";
+        message = "";
+        flash("ok", `✓ Fundet: ${word}`);
+        selectionFeedback = online ? "Alle ord fundet! Resultatet synkroniseres." : "Alle ord fundet! Resultatet gemmes på serveren, når der er forbindelse.";
         await tick();
         completionHeading?.focus();
-      } else message = `${word} fundet!`;
-      selectionFeedback = message;
+      } else flash("ok", `✓ Fundet: ${word}`, `${word} fundet!`);
     } finally { markingWord = false; }
   }
   // Markings are handled one at a time, so a word marked while the previous one is
@@ -506,8 +660,7 @@
   let markQueue: Promise<void> = Promise.resolve();
   function submitWord(start: Point, end: Point) {
     markQueue = markQueue.then(() => markWord(start, end)).catch(() => {
-      selectionFeedback = "Kunne ikke registrere ordet. Prøv igen.";
-      message = selectionFeedback;
+      flash("bad", "Kunne ikke registrere ordet. Prøv igen.");
     });
   }
 
@@ -516,18 +669,21 @@
     if (!element) return null;
     return { row: Number(element.dataset.row), col: Number(element.dataset.col) };
   }
-  function pointerInsideGrid(event: PointerEvent): boolean {
-    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    return event.clientX >= rect.left && event.clientX < rect.right &&
-      event.clientY >= rect.top && event.clientY < rect.bottom;
+  function pointerInsideGrid(x: number, y: number): boolean {
+    const rect = gridViewport?.getBoundingClientRect();
+    return !!rect && x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
   }
-  function snappedEnd(event: PointerEvent): Point | null {
-    if (!dragStart || !active || !pointerInsideGrid(event)) return null;
-    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    const size = active.puzzle.grid.length;
+  // Snaps the end of a drag to the nearest allowed direction. In the zoomed view the
+  // end stays inside the visible window, which slides when the finger rests at its edge.
+  function endAt(x: number, y: number): Point | null {
+    if (!dragStart || !active || !gridInner || !pointerInsideGrid(x, y)) return null;
+    const rect = gridInner.getBoundingClientRect();
+    const cell = rect.width / size;
+    const span = zoomed ? viewCells : size;
+    const clamp = (value: number, first: number) => Math.max(first - 0.49, Math.min(first + span - 0.51, value));
     return snapDragEnd(dragStart, {
-      row: (event.clientY - rect.top) / rect.height * size - 0.5,
-      col: (event.clientX - rect.left) / rect.width * size - 0.5
+      row: clamp((y - rect.top) / cell - 0.5, zoomed ? view.r0 : 0),
+      col: clamp((x - rect.left) / cell - 0.5, zoomed ? view.c0 : 0)
     }, size, LEVELS[active.puzzle.level].directions, dragEnd);
   }
   function clearDrag() {
@@ -536,57 +692,72 @@
     dragPointerId = null;
     dragOrigin = null;
     dragHasMoved = false;
+    lastPointer = null;
+    if (edgeTimer) clearInterval(edgeTimer);
+    edgeTimer = null;
   }
   function movedEnough(event: PointerEvent): boolean {
     if (!dragOrigin || !active) return false;
-    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    const cellSize = rect.width / active.puzzle.grid.length;
-    const threshold = Math.min(10, Math.max(5, cellSize * 0.35));
+    const threshold = Math.min(10, Math.max(5, cellPx * 0.35));
     return Math.hypot(event.clientX - dragOrigin.x, event.clientY - dragOrigin.y) >= threshold;
+  }
+  async function edgePan() {
+    if (!zoomed || !dragHasMoved || !lastPointer || !gridViewport) return;
+    const rect = gridViewport.getBoundingClientRect(), zone = rect.width * 0.12;
+    const cols = lastPointer.x < rect.left + zone ? -1 : lastPointer.x > rect.right - zone ? 1 : 0;
+    const rows = lastPointer.y < rect.top + zone ? -1 : lastPointer.y > rect.bottom - zone ? 1 : 0;
+    if (!rows && !cols) return;
+    pan(rows, cols);
+    await tick();
+    if (lastPointer) dragEnd = endAt(lastPointer.x, lastPointer.y) ?? dragEnd;
   }
   function pointerDown(event: PointerEvent) {
     if (!active || active.completed || dragPointerId !== null || (event.pointerType === "mouse" && event.button !== 0)) return;
     const start = cellFromPointer(event);
     if (!start) return;
+    if (zoomable && overview) { pickOverview(start); return; }
     clearRejection();
-    selectionFeedback = "";
     dragPointerId = event.pointerId;
     dragStart = start;
     dragEnd = start;
     dragOrigin = { x: event.clientX, y: event.clientY };
     dragHasMoved = false;
     (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    if (zoomed) edgeTimer = setInterval(() => void edgePan(), 300);
   }
   function pointerMove(event: PointerEvent) {
     if (event.pointerId !== dragPointerId) return;
+    lastPointer = { x: event.clientX, y: event.clientY };
     if (!dragHasMoved && !movedEnough(event)) return;
     dragHasMoved = true;
-    dragEnd = snappedEnd(event) ?? dragEnd;
+    dragEnd = endAt(event.clientX, event.clientY) ?? dragEnd;
   }
   function pointerUp(event: PointerEvent) {
     if (event.pointerId !== dragPointerId || !dragStart) return;
     const start = dragStart;
-    const inside = pointerInsideGrid(event);
+    const inside = pointerInsideGrid(event.clientX, event.clientY);
     const wasDrag = dragHasMoved || movedEnough(event);
-    const end = inside ? snappedEnd(event) : dragEnd;
+    const end = inside ? endAt(event.clientX, event.clientY) : dragEnd;
     clearDrag();
     if (wasDrag) {
       selectedStart = null;
       if (end && (end.row !== start.row || end.col !== start.col)) submitWord(start, end);
-      else {
-        selectionFeedback = inside ? "Træk til ordets sidste bogstav, før du slipper." : "Trækket sluttede uden for gitteret. Prøv igen.";
-        message = selectionFeedback;
-      }
+      else flash("info", inside ? "Træk til ordets sidste bogstav, før du slipper." : "Trækket sluttede uden for gitteret. Prøv igen.");
     } else {
       if (!inside) {
-        selectionFeedback = "Slip inde i gitteret, eller tryk på start- og slutfelt.";
-        message = selectionFeedback;
+        flash("info", "Slip inde i gitteret, eller tryk på start- og slutfelt.");
         return;
       }
       const tapped = cellFromPointer(event);
       if (tapped) {
-        if (selectedStart) { const first = selectedStart; selectedStart = null; submitWord(first, tapped); }
-        else selectedStart = tapped;
+        if (selectedStart && selectedStart.row === tapped.row && selectedStart.col === tapped.col) {
+          selectedStart = null;
+          selectionFeedback = "Markering annulleret.";
+        } else if (selectedStart) { const first = selectedStart; selectedStart = null; submitWord(first, tapped); }
+        else {
+          selectedStart = tapped;
+          selectionFeedback = `Startfelt valgt: ${active?.puzzle.grid[tapped.row]?.[tapped.col]}, række ${tapped.row + 1}, kolonne ${tapped.col + 1}. Tryk på sidste bogstav.`;
+        }
       }
     }
   }
@@ -601,8 +772,7 @@
       submitWord(start, end);
       return;
     }
-    selectionFeedback = "Trækket blev afbrudt. Prøv igen.";
-    message = selectionFeedback;
+    flash("info", "Trækket blev afbrudt. Prøv igen.");
   }
   function keyCell(event: KeyboardEvent, row: number, col: number) {
     if (!active || active.completed) return;
@@ -612,14 +782,18 @@
       event.preventDefault();
       const last = active.puzzle.grid.length - 1;
       focusCell = { row: Math.max(0, Math.min(last, row + step.row)), col: Math.max(0, Math.min(last, col + step.col)) };
-      document.querySelector<HTMLButtonElement>(`[data-row="${focusCell.row}"][data-col="${focusCell.col}"]`)?.focus();
+      ensureVisible(focusCell);
+      // The window moves by transform, so the browser must not scroll the clipped grid itself.
+      document.querySelector<HTMLButtonElement>(`[data-row="${focusCell.row}"][data-col="${focusCell.col}"]`)?.focus({ preventScroll: true });
     }
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      if (selectedStart) { const first = selectedStart; selectedStart = null; submitWord(first, { row, col }); }
+      if (zoomable && overview) { pickOverview({ row, col }); return; }
+      if (selectedStart?.row === row && selectedStart.col === col) { selectedStart = null; selectionFeedback = "Markering annulleret."; }
+      else if (selectedStart) { const first = selectedStart; selectedStart = null; submitWord(first, { row, col }); }
       else selectedStart = { row, col };
     }
-    if (event.key === "Escape") { selectedStart = null; clearRejection(); }
+    if (event.key === "Escape") { selectedStart = null; clearRejection(); confirmAbandon = false; }
   }
 
   async function hint() {
@@ -644,7 +818,7 @@
   }
 
   async function showGoals() {
-    active = null; selectedStart = null; message = "";
+    leaveGame();
     await tick();
     goalsCard?.scrollIntoView({ block: "start" });
     goalsCard?.focus();
@@ -652,11 +826,11 @@
 
   async function abandon() {
     if (!active || active.completed || markingWord || hintSaving) return;
-    if (!confirm("Opgiv banen? En opgivet bane tæller ikke som gennemført og kan ikke spilles videre.")) return;
+    confirmAbandon = false;
     selectedStart = null;
     if (!await addMove({ id: newMoveId(), kind: "abandon" }, { found: active.found, hints: active.hints, completed: true, abandoned: true })) return;
-    selectionFeedback = "";
-    message = "Banen er opgivet.";
+    selectionFeedback = "Banen er opgivet.";
+    message = "";
     await tick();
     completionHeading?.focus();
   }
@@ -853,228 +1027,363 @@
   <title>Find ord – dansk ordjagt</title>
   <meta name="description" content="Find danske ord i kategorier. Spil også offline." />
 </svelte:head>
+<svelte:window bind:innerWidth={viewportW} bind:innerHeight={viewportH} />
 
-<header class="topbar" class:playing={!!active}>
-  <div class="brand"><span class="brandmark">F<span>I</span>ND</span><small>ORDJAGT PÅ DANSK</small></div>
-  {#if identity}
-    <div class="top-actions"><span class="connection" class:offline={!online || sessionExpired} title={online && !sessionExpired ? "" : "Hentede baner kan spilles videre. Trækkene sendes, når forbindelsen er tilbage."}>● {connectionLabel}</span>{#if sessionExpired}<button class="text-button" onclick={showLogin}>Log ind igen</button>{/if}<button class="text-button" onclick={signOut} disabled={markingWord}>Log ud</button></div>
-  {/if}
-</header>
+{#snippet avatar(id: string | null | undefined, size = "")}
+  <span class={`avatar tint-${avatarTint(id)} ${size}`} aria-hidden="true">{id && id in AVATARS ? AVATARS[id as keyof typeof AVATARS] : "🙂"}</span>
+{/snippet}
+{#snippet pill(state: Pill, compact = false)}
+  <span class={`pill ${state.tone}`} class:compact><Icon name={state.icon} size={15} /><span class="pill-text">{compact ? state.short : state.text}</span></span>
+{/snippet}
+{#snippet logo(large = false)}
+  <span class="logo" class:large>FIND<span class="sr-only"> ord</span></span>
+{/snippet}
 
-<main class:playing={!!active}>
+{#if identity && (!active || roomy)}
+  <header class="topbar">
+    {@render logo()}
+    {#if active}<nav class="crumbs" aria-label="Brødkrumme"><button class="link" onclick={leaveGame} disabled={markingWord}>Forside</button><span aria-hidden="true">/</span><span>{active.campaignId ? `Endeløs kampagne · bane ${active.campaignPosition}` : "Enkelt bane"}</span></nav>{/if}
+    <span class="spacer"></span>
+    {#if active}<span class="top-pill">{@render pill(gamePill)}</span>{/if}
+    <button class="who" onclick={openAccount} aria-label={`Min konto: ${identity.name}`}>{@render avatar(identity.avatar)}<span class="who-name">{identity.name}{identity.role === "admin" ? " · Administrator" : ""}</span></button>
+  </header>
+{/if}
+{#if identity && $updateReady && (!active || active.completed)}
+  <div class="update-banner" role="status"><Icon name="update" /><span><b>En ny version er klar.</b>{active ? " Banen er slut, så du kan opdatere nu." : ""}</span><button class="btn info" onclick={() => void applyUpdate()} disabled={markingWord}>Opdatér</button></div>
+{/if}
+
+<main class:playing={!!active} class:short={!!active && shortLandscape}>
   {#if loading}
-    <section class="card center"><h1>Finder dine baner…</h1></section>
+    <section class="loading-screen" aria-live="polite">{@render logo(true)}<h1>Finder dine baner…</h1></section>
   {:else if !identity}
-    {#if setupNeeded}
-    <section class="login card">
-      <div class="eyebrow">NY INSTALLATION</div><h1>Opret første administrator</h1>
-      <p>Administratoren opretter derefter konti til de andre spillere.</p>
-      <form onsubmit={(event) => { event.preventDefault(); void createFirstAdmin(); }}>
-        <label>Opsætningskode<input bind:value={setupToken} autocomplete="off" required /></label>
-        {#if !setupToken}<p class="muted">Koden står i serverens log, fx med <code>docker compose logs find-ord</code>.</p>{/if}
-        <label>Brugernavn<input autocomplete="username" bind:value={username} pattern={"[A-Za-z0-9_.\\-]{3,30}"} required /></label>
-        <label>Visningsnavn<input bind:value={setupName} maxlength="80" required /></label>
-        <label>Adgangskode<input type="password" autocomplete="new-password" minlength="8" bind:value={password} required /></label>
-        <button class="primary" disabled={busy || !online} type="submit">{busy ? "Opretter…" : "Opret administrator"}</button>
-      </form>
-    </section>
-    {:else}
-    <section class="login card">
-      <div class="eyebrow">VELKOMMEN</div><h1>Find ord.<br /><em>Find ro.</em></h1>
-      <p>Vælg en kategori, find ordene og tag spillet med dig offline.</p>
-      <form onsubmit={(event) => { event.preventDefault(); void signIn(); }}>
-        <label>Brugernavn<input autocomplete="username" bind:value={username} required /></label>
-        <label>Adgangskode<input type="password" autocomplete="current-password" bind:value={password} required /></label>
-        <button class="primary" disabled={busy || !online} type="submit">{busy ? "Logger ind…" : "Log ind"}</button>
-      </form>
-      <p class="muted">Konti oprettes af en administrator.</p>
-    </section>
-    {/if}
-  {:else}
-    {#if !active}
-      {#if $updateReady}<div class="update-banner" role="status"><span>En ny version af Find ord er klar.</span><button class="secondary" onclick={() => void applyUpdate()} disabled={markingWord}>Opdatér</button></div>{/if}
-      <div class="welcome"><div><div class="eyebrow">{identity.avatar && identity.avatar in AVATARS ? `${AVATARS[identity.avatar as keyof typeof AVATARS]} ` : ""}HEJ {identity.name.toLocaleUpperCase("da-DK")}</div><h1>Find ord.</h1></div><div class="status-pill">{pending ? `${pending} afventer synkronisering` : online ? "Alt er synkroniseret" : "Gemt på enheden"}</div></div>
-      {#if identity.child}<p class="child-notice">Børnebaner bruger kun ord, der er godkendt til børn, og gitteret tjekkes for uønskede ord. Ingen kontrol fanger alt, så sig til en voksen, hvis du ser noget mærkeligt.</p>{/if}
-      <section class="card launch-card">
-        <h2>Endeløs kampagne</h2><p>Vælg en fast sværhedsgrad. Hver bane får en ny kategori, og de næste baner hentes til offlinebrug.</p>
-        <div class="launch-fields"><label class="launch-label">Sværhedsgrad<select bind:value={campaignLevel} aria-describedby="campaign-directions">{#each campaignLevels(childProfile) as id (id)}<option value={id}>{LEVELS[id].name} · {LEVELS[id].size} × {LEVELS[id].size}</option>{/each}</select></label></div>
-        <p class="level-directions" id="campaign-directions" aria-live="polite">Ordretninger: {directionDescription(campaignLevel)}.</p>
-        <button class="primary start-button" onclick={startCampaignFlow} disabled={busy || !online}>{busy ? "Henter baner…" : campaigns.some((item) => item.level === campaignLevel) ? "Fortsæt kampagne →" : "Start kampagne →"}</button>
-        {#if campaigns.length}
-          <div class="saved-list">{#each campaigns as campaign (campaign.id)}
-            <button onclick={() => openCampaign(campaign)}><span><strong>{LEVELS[campaign.level].name} kampagne</strong><small>{games.filter((game) => game.campaignId === campaign.id && !game.completed).length} hentede baner klar</small></span><span class="saved-status">Fortsæt ↗</span></button>
-          {/each}</div>
-        {/if}
-        {#if !online}<p class="muted">Når de hentede baner er spillet, kræver nye baner forbindelse.</p>{/if}
-      </section>
-      <section class="card launch-card">
-        <h2>En enkelt bane</h2><p>Vælg selv kategori og sværhedsgrad.</p>
-        <div class="launch-fields"><label class="launch-label">Kategori<select bind:value={category}><option value="surprise">Overrask mig</option>{#each Object.entries(CATEGORIES) as [id, item] (id)}<option value={id}>{item.name}</option>{/each}</select></label><label class="launch-label">Sværhedsgrad<select bind:value={level} aria-describedby="single-directions">{#each available as id (id)}<option value={id}>{LEVELS[id].name} · {LEVELS[id].size} × {LEVELS[id].size}</option>{/each}</select></label></div>
-        <p class="level-directions" id="single-directions" aria-live="polite">Ordretninger: {directionDescription(level)}.</p>
-        <button class="primary start-button" onclick={() => startGame()} disabled={busy || !online}>{busy ? "Danner bane…" : "Start bane →"}</button>
-        {#if !online}<p class="muted">Nye baner kræver forbindelse. Hentede baner kan spilles offline.</p>{/if}
-      </section>
-      <section class="card goals-card" id="goals" tabindex="-1" bind:this={goalsCard} aria-labelledby="goals-heading">
-        <div class="goals-head"><h2 id="goals-heading">Mål</h2><span class="credit-pill">Hintkreditter: {credits} af {challengeInfo?.max ?? 5}</span></div>
-        <p class="muted">Klar et mål for at få 1 hintkredit. Målene har ingen tidsfrist, og et hint koster 1 kredit.</p>
-        {#if challengeInfo}
-          <ul class="goal-list">{#each challengeInfo.challenges as goal (goal.id)}<li>
-            <strong>{goal.title}</strong>
-            <progress max={goal.target} value={goal.progress} aria-label={`${goal.title}: ${goal.progress} af ${goal.target}`}></progress>
-            <b>{goal.progress}/{goal.target}</b>
-            {#if goal.completed}<small>Klaret. Krediten venter, til du har plads under {challengeInfo.max}.</small>{/if}
-          </li>{/each}</ul>
-          {#if pending}<p class="muted">Træk, der venter på synkronisering, tælles med, når de er sendt.</p>{/if}
-        {:else}<p class="muted">Målene vises, når du har forbindelse.</p>{/if}
-      </section>
-      <details class="card secondary-panel"><summary>Gemte enkeltbaner <span>{games.filter((game) => !game.campaignId).length}</span></summary>
-        {#if games.some((game) => !game.campaignId)}
-          <div class="saved-list">{#each games.filter((game) => !game.campaignId) as game (game.id)}<button onclick={() => chooseGame(game)}><span><strong>{CATEGORIES[game.puzzle.category].name}</strong><small>{LEVELS[game.puzzle.level].name} · {game.found.length}/{game.puzzle.words.length} ord</small></span><span class="saved-status">{game.abandoned ? "Opgivet" : game.completed ? "Gennemført" : shellReady ? "Klar offline" : "Afventer offlineapp"} ↗</span></button>{/each}</div>
-        {:else}<p class="muted">Dine hentede baner vises her.</p>{/if}
-        {#if !storagePersisted}<p class="muted">Browseren kan slette hentede baner ved pladsmangel. Synkronisér, før du rydder browserdata.</p>{/if}
-        {#if online && pending}<button class="secondary" onclick={syncAll}>Synkronisér nu</button>{/if}
-      </details>
-      <details class="card secondary-panel"><summary>Achievements <span>{achievements.filter((item) => item.unlocked).length}/{achievements.length}</span></summary>
-        {#if achievements.length}
-          {#if pending}<p class="muted">{pending} træk afventer synkronisering. Achievements opdateres, når de er modtaget.</p>{/if}
-          {#if nextGoals(achievements).length}
-            <h3 class="panel-heading">Næste mål</h3>
-            <div class="next-goals">{#each nextGoals(achievements) as item (item.id)}<div><span aria-hidden="true">{ACHIEVEMENT_ICONS[item.icon]}</span><strong>{item.title}</strong><progress max={item.target} value={item.current} aria-label={`${item.title}: ${item.current} af ${item.target}`}></progress><b>{item.current}/{item.target}</b></div>{/each}</div>
-          {/if}
-          <div class="achievement-filter" role="group" aria-label="Vis achievements">
-            {#each [["all", "Alle"], ["unlocked", "Optjent"], ["locked", "Mangler"]] as [value, label] (value)}<button class="secondary" aria-pressed={achievementFilter === value} onclick={() => achievementFilter = value as typeof achievementFilter}>{label}</button>{/each}
-          </div>
-          <div class="achievement-list">{#each shownAchievements as item (item.id)}<div class:unlocked={item.unlocked}><span aria-hidden="true">{ACHIEVEMENT_ICONS[item.icon]}</span><div><strong>{item.title}</strong><small>{item.description}</small>{#if item.unlockedAt}<small>Optjent {new Date(item.unlockedAt).toLocaleDateString("da-DK", { day: "numeric", month: "long", year: "numeric" })}</small>{/if}</div><b>{item.unlocked ? "✓" : `${item.current}/${item.target}`}</b></div>{/each}</div>
-        {:else}<p class="muted">Dine achievements vises, når du har forbindelse.</p>{/if}
-      </details>
-      <details class="card secondary-panel"><summary>Statistik</summary>
-        {#if stats}
-          <dl class="stats-grid">
-            <div><dt>Gennemførte baner</dt><dd>{stats.completed}</dd></div>
-            <div><dt>Fundne ord</dt><dd>{stats.found}</dd></div>
-            <div><dt>Forskellige ord</dt><dd>{stats.unique}</dd></div>
-            <div><dt>Uden hint</dt><dd>{stats.withoutHints}</dd></div>
-            <div><dt>Spilledage</dt><dd>{stats.activeDays}</dd></div>
-          </dl>
-          {#if stats.byCategory.length}
-            <table class="stats-table"><caption>Pr. kategori</caption><thead><tr><th scope="col">Kategori</th><th scope="col">Baner</th><th scope="col">Ord</th></tr></thead>
-              <tbody>{#each stats.byCategory as row (row.category)}<tr><th scope="row">{CATEGORIES[row.category as CategoryId]?.name ?? row.category}</th><td>{row.completed}</td><td>{row.found}</td></tr>{/each}</tbody></table>
-          {/if}
-          {#if pending}<p class="muted">Tallene er fra sidste synkronisering.</p>{/if}
-        {:else}<p class="muted">Din statistik vises, når du har forbindelse.</p>{/if}
-      </details>
-      <details class="card secondary-panel"><summary>Min konto</summary>
-        <p>{identity.avatar && identity.avatar in AVATARS ? AVATARS[identity.avatar as keyof typeof AVATARS] : ""} {identity.name} <small class="muted">@{identity.username}</small></p>
-        <p class="muted">Profiltype: {identity.child ? "Barn" : "Voksen"}{identity.role === "admin" ? " · Administrator" : ""}. Kun en administrator kan ændre profiltypen.</p>
-        {#if online && !sessionExpired}
-          {#if editingProfile}
-            <form class="account-form" onsubmit={(event) => { event.preventDefault(); void saveProfile(); }}>
-              <label>Visningsnavn<input bind:value={profileName} maxlength="80" required /></label>
-              <fieldset class="avatar-choice"><legend>Avatar</legend>
-                {#each Object.entries(AVATARS) as [id, symbol] (id)}<label><input type="radio" name="avatar" value={id} bind:group={profileAvatar} /><span aria-hidden="true">{symbol}</span><span class="sr-only">{AVATAR_NAMES[id as keyof typeof AVATARS]}</span></label>{/each}
-              </fieldset>
-              <div class="form-actions"><button class="secondary" type="submit">Gem profil</button><button class="text-button" type="button" onclick={() => editingProfile = false}>Annullér</button></div>
-            </form>
-          {:else}<button class="secondary" onclick={startProfileEdit}>Ret navn og avatar</button>{/if}
-          <form class="account-form" onsubmit={(event) => { event.preventDefault(); void changePassword(); }}>
-            <label>Nuværende adgangskode<input type="password" autocomplete="current-password" bind:value={currentPassword} required /></label>
-            <label>Ny adgangskode<input type="password" autocomplete="new-password" minlength="8" bind:value={nextPassword} required /></label>
-            <button class="secondary" type="submit" disabled={changingPassword}>{changingPassword ? "Ændrer…" : "Skift adgangskode"}</button>
-          </form>
-        {:else}<p class="muted">Adgangskoden kan ændres, når du er logget ind med forbindelse.</p>{/if}
-      </details>
-      {#if identity.role === "admin"}
-        <details class="card secondary-panel"><summary>Spillere og konti</summary>
-          {#if !showAccounts}<button class="secondary" onclick={loadAccounts}>Administrer konti</button>
-          {:else}
-            <p class="muted">Børneprofiler får kun børnebaner. Ændres profiltypen, logges kontoen ud på alle enheder, og baner til den gamle profiltype fjernes ved næste forbindelse.</p>
-            <label class="admin-password">Din adgangskode (kræves for at ændre profiltype)<input type="password" autocomplete="current-password" bind:value={adminPassword} /></label>
-            <div class="account-list">{#each accounts as account (account.id)}<div class="account-row">
-              <span>{account.avatar && account.avatar in AVATARS ? AVATARS[account.avatar as keyof typeof AVATARS] : ""} {account.name} <small>@{account.username} · {account.child ? "Barn" : "Voksen"}{account.role === "admin" ? " · Administrator" : ""}{account.banned ? " · Deaktiveret" : ""}</small></span>
-              {#if account.id !== identity.id}<span class="account-actions">
-                {#if account.role !== "admin"}<button class="text-button" onclick={() => setChildProfile(account, !account.child)}>{account.child ? "Gør til voksen" : "Gør til barn"}</button>{/if}
-                <button class="text-button" onclick={() => setBanned(account, !account.banned)}>{account.banned ? "Genaktivér" : "Deaktivér"}</button>
-                <button class="text-button" onclick={() => resetPassword(account)}>Nulstil adgangskode</button>
-                <button class="text-button danger" onclick={() => deleteAccount(account)}>Slet konto</button>
-              </span>{/if}
-            </div>{/each}</div>
-            <form class="account-form" onsubmit={(event) => { event.preventDefault(); void createAccount(); }}>
-              <label>Navn<input bind:value={newName} required /></label><label>Brugernavn<input bind:value={newUser} pattern={"[A-Za-z0-9_.\\-]{3,30}"} required /></label><label>Adgangskode<input type="password" minlength="8" bind:value={newPassword} required /></label><label class="checkbox"><input type="checkbox" bind:checked={newChild} /> Børneprofil</label><button class="secondary" type="submit">Opret spiller</button>
-            </form>
-          {/if}
-        </details>
-        <details class="card secondary-panel" ontoggle={(event) => { if ((event.currentTarget as HTMLDetailsElement).open && !wordAdmin) void loadWordAdmin(); }}><summary>Ordlister</summary>
-          {#if wordAdmin}
-            <p class="muted">Find ord {wordAdmin.versions.app} · ordliste v{wordAdmin.versions.words} · kategorier v{wordAdmin.versions.categories} · børnepolitik v{wordAdmin.versions.childPolicy} · validering v{wordAdmin.versions.validation} · COR {wordAdmin.versions.cor} · {wordAdmin.blockedSequences} blokerede sekvenser. Listerne ændres i koden efter den redaktionelle procedure i <code>docs/ordindhold.md</code>; git er historikken, og rollback sker med en tidligere udgave.</p>
-            <!-- A scrollable region must be reachable by keyboard (axe: scrollable-region-focusable). -->
-            <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-            <div class="table-scroll" tabindex="0" role="region" aria-label="Dækning pr. kategori og niveau"><table class="coverage-table"><caption>Dækning: ord med niveauets længde, voksen / barn</caption>
-              <thead><tr><th scope="col">Kategori</th>{#each Object.entries(LEVELS) as [id, item] (id)}<th scope="col">{item.name}<small> ({item.words})</small></th>{/each}</tr></thead>
-              <tbody>{#each wordAdmin.coverage as row (row.category)}<tr><th scope="row">{row.name}</th>{#each Object.keys(LEVELS) as id (id)}{@const cell = row.levels[id]}<td class:closed={!cell.adultOpen || !cell.childOpen}>{cell.adult} / {cell.child}{#if !cell.childOpen}<small> lukket for børn</small>{/if}{#if !cell.adultOpen}<small> lukket</small>{/if}</td>{/each}</tr>{/each}</tbody></table></div>
-            <div class="word-filters">
-              <label>Søg<input type="search" bind:value={wordQuery} autocomplete="off" /></label>
-              <label>Kategori<select bind:value={wordCategory}><option value="">Alle</option>{#each Object.entries(CATEGORIES) as [id, item] (id)}<option value={id}>{item.name}</option>{/each}</select></label>
-              <label>Børn<select bind:value={wordChild}><option value="">Alle</option><option value="ja">Godkendt</option><option value="nej">Kun voksne</option></select></label>
-            </div>
-            <p class="muted" aria-live="polite">{shownWords.length} af {wordAdmin.words.length} tilknytninger{shownWords.length > 200 ? " (de første 200 vises)" : ""}.</p>
-            <!-- A scrollable region must be reachable by keyboard (axe: scrollable-region-focusable). -->
-            <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-            <div class="table-scroll" tabindex="0" role="region" aria-label="Ord og kilder"><table class="word-table"><thead><tr><th scope="col">Ord</th><th scope="col">Kategori</th><th scope="col">Børn</th><th scope="col">Læseniveau</th><th scope="col">COR-kilde</th></tr></thead>
-              <tbody>{#each shownWords.slice(0, 200) as item (`${item.category}/${item.word}`)}<tr><td>{item.word}</td><td>{CATEGORIES[item.category].name}</td><td>{item.child ? "Godkendt" : `Nej: ${item.reason}`}</td><td>{item.readingLevel}</td><td><small>{item.sources.join(", ") || "mangler"}</small></td></tr>{/each}</tbody></table></div>
-          {:else}<p class="muted">{wordAdminError || "Henter ordlisterne…"}</p>{/if}
-        </details>
+    <section class="auth">
+      {@render logo(true)}
+      {#if setupNeeded}
+        <div><h1>Opret første administrator</h1><p class="lead">Serveren har ingen konti endnu. Administratoren opretter derefter konti til de andre spillere.</p></div>
+        {#if message}<div class="notice danger" role="alert"><Icon name="alert" /><span>{message}</span></div>{/if}
+        <form onsubmit={(event) => { event.preventDefault(); void createFirstAdmin(); }}>
+          <label class="field"><span>Opsætningskode</span><input class="mono" bind:value={setupToken} autocomplete="one-time-code" required /><small>{setupToken ? "Koden virker én gang." : "Koden står i serverens log, fx med docker compose logs find-ord."}</small></label>
+          <label class="field"><span>Brugernavn</span><input autocomplete="username" bind:value={username} pattern={"[A-Za-z0-9_.\\-]{3,30}"} required /><small>Bruges til at logge ind. 3–30 bogstaver, tal, punktum, bindestreg eller understreg.</small></label>
+          <label class="field"><span>Visningsnavn</span><input bind:value={setupName} maxlength="80" required /><small>Det navn familien ser, fx “Mor” eller “Mette”.</small></label>
+          <label class="field"><span>Adgangskode</span><input type="password" autocomplete="new-password" minlength="8" bind:value={password} required /><small>Mindst 8 tegn.</small></label>
+          <button class="btn primary large" disabled={busy || !online} type="submit">{busy ? "Opretter…" : "Opret administrator"}</button>
+        </form>
+      {:else}
+        <div><h1>Log ind</h1><p class="lead">Velkommen tilbage til ordjagten.</p></div>
+        {#if !online}<div class="notice warn" role="alert"><Icon name="alert" /><span><b>Serveren svarer ikke.</b> Tjek, at hjemmeserveren er tændt og at enheden er på nettet.</span></div>{/if}
+        {#if message}<div class="notice" role="status"><Icon name="info" /><span>{message}</span></div>{/if}
+        <form onsubmit={(event) => { event.preventDefault(); void signIn(); }}>
+          <label class="field"><span>Brugernavn</span><input autocomplete="username" bind:value={username} required /></label>
+          <div class="field"><label for="login-password">Adgangskode</label><span class="reveal"><input id="login-password" type={showPassword ? "text" : "password"} autocomplete="current-password" bind:value={password} required /><button type="button" class="link" onclick={() => showPassword = !showPassword} aria-pressed={showPassword} aria-label="Vis adgangskode">{showPassword ? "Skjul" : "Vis"}</button></span></div>
+          <button class="btn primary large" disabled={busy || !online} type="submit">{busy ? "Logger ind…" : "Log ind"}</button>
+        </form>
+        <p class="aside"><Icon name="device" />Når du har logget ind én gang, kan du spille hentede baner på denne enhed uden internet.</p>
+        <p class="footnote">Konti oprettes af en administrator. Har du glemt koden, så spørg den voksne, der styrer serveren.</p>
       {/if}
-    {:else}
-      <section class="game-heading">
-        <button class="back" onclick={() => { active = null; selectedStart = null; message = ""; }} disabled={markingWord}>← Forside</button>
-        <div class="game-title"><div class="eyebrow">{active.campaignId ? `KAMPAGNE · BANE ${active.campaignPosition} · ` : ""}{LEVELS[active.puzzle.level].name.toLocaleUpperCase("da-DK")} · {active.puzzle.grid.length} × {active.puzzle.grid.length}</div><h1>{CATEGORIES[active.puzzle.category].name}</h1></div>
-        <p class="game-status">{active.found.length} af {active.puzzle.words.length} ord · {pending ? `${pending} træk afventer synkronisering` : online ? "Synkroniseret" : "Gemt på enheden"}</p>
-        <p class="game-directions">Ordretninger: {directionDescription(active.puzzle.level)}.</p>
-        {#if identity.child}<details class="game-child-notice"><summary>Om børneord</summary><p>Børnebaner bruger kun ord, der er godkendt til børn, og gitteret tjekkes for uønskede ord. Ingen kontrol fanger alt, så sig til en voksen, hvis du ser noget mærkeligt. Ændringer i kontrollen tjekkes ved næste forbindelse.</p></details>{/if}
-      </section>
-      <div class="game-layout" class:completed-layout={active.completed}>
-        <section class="card grid-card"><div class="grid-header"><span>{active.abandoned ? "BANE OPGIVET" : active.completed ? "BANE GENNEMFØRT" : "FIND ORDENE"}</span><span>{active.found.length} / {active.puzzle.words.length}</span><a class="word-jump" href="#word-list">Se ordlisten ↓</a></div>
-          {#if active.completed}
-            <div class="completion-panel" aria-live="polite">
-              <h2 tabindex="-1" bind:this={completionHeading}>{active.abandoned ? "Bane opgivet" : "Bane gennemført!"}</h2>
-              <p>Du fandt {active.found.length} af {active.puzzle.words.length} ord.{active.abandoned ? " En opgivet bane tæller ikke som gennemført." : ""}</p>
-              <p class="completion-sync">{activePending ? "Resultatet er gemt på enheden og afventer synkronisering. Nye achievements beregnes, når det er synkroniseret." : "Resultatet er gemt."}</p>
-              {#if newAchievements.length}<p class="completion-achievements">★ Ny achievement: {newAchievements.map((item) => item.title).join(", ")}</p>{/if}
-              <div class="completion-actions">
-                {#if active.campaignId}<button class="primary" onclick={nextInCampaign} disabled={busy}>Næste bane →</button>
-                {:else}<button class="primary" onclick={newSingleGame} disabled={busy}>{busy ? "Henter bane…" : "Ny bane →"}</button>{/if}
-                <button class="secondary" onclick={() => { active = null; selectedStart = null; message = ""; }}>Forside</button>
+    </section>
+  {:else if creating && !active}
+    <section class="creating" aria-live="polite">
+      <div class="game-top"><div class="title"><h1>{creating.title}</h1><p>{creating.meta}</p></div></div>
+      <div class="creating-grid" style={`--size:${creating.size}`}><div class="creating-box"><b>{creating.heading}</b><span>{creating.text}</span></div></div>
+    </section>
+  {:else if !active}
+    <div class="home">
+      <div class="hello">
+        <h1>Hej, {identity.name}</h1>
+        <div class="pills">{@render pill(syncPill)}{@render pill(shellReady ? { tone: "ok", icon: "check", text: "Klar offline", short: "Klar offline" } : { tone: "neutral", icon: "device", text: "Afventer offlineapp", short: "Afventer offlineapp" })}</div>
+      </div>
+      {#if sessionExpired}
+        <div class="notice danger" role="alert"><Icon name="alert" /><div><b>Session udløbet</b><span>Dine træk er gemt på enheden. Log ind igen for at synkronisere dem.</span><button class="btn primary" onclick={showLogin}>Log ind igen</button></div></div>
+      {:else if !networkUp}
+        <div class="notice" role="status"><Icon name="offline" /><div><b>Ingen internet</b><span>Du kan spille hentede baner videre. Dine træk gemmes på enheden og sendes, når du er online igen.</span></div></div>
+      {:else if !online}
+        <div class="notice warn" role="status"><Icon name="alert" /><div><b>Serveren svarer ikke</b><span>Hentede baner kan spilles videre. Trækkene sendes, når forbindelsen er tilbage.</span><button class="btn outline warn" onclick={() => void reconnect()}>Prøv nu</button></div></div>
+      {/if}
+      {#if identity.child}<div class="kid-note">{@render avatar(identity.avatar)}<span><b>Du spiller med børneord.</b> Ordene er godkendt til børn, og gitteret tjekkes for uønskede ord. Ingen kontrol fanger alt, så sig til en voksen, hvis du ser noget mærkeligt.</span></div>{/if}
+
+      <div class="cards">
+        <section class="card" aria-labelledby="campaign-heading">
+          <div><h2 id="campaign-heading">Endeløs kampagne</h2><p class="sub">{campaignForLevel ? `${readyInCampaign} hentede ${readyInCampaign === 1 ? "bane" : "baner"} klar. Én bane ad gangen.` : "Hver bane får en ny kategori. Banerne hentes til offlinebrug."}</p></div>
+          <div class="seg" role="group" aria-label="Niveau i kampagnen">
+            {#each levelIds as id (id)}{@const open = campaignLevels(childProfile).includes(id)}<button aria-pressed={campaignLevel === id} aria-disabled={!open} class:locked={!open} onclick={() => { if (open) { campaignLevel = id; campaignNote = ""; } else campaignNote = `${LEVELS[id].name} kan ikke spilles i kampagnen endnu: ingen kategori har ord nok${childProfile ? " blandt børneordene" : ""}.`; }}>{#if !open}<Icon name="lock" size={14} />{/if}{LEVELS[id].name}</button>{/each}
+          </div>
+          {#if campaignNote}<div class="notice locked" role="status"><Icon name="lock" /><span>{campaignNote}</span></div>{/if}
+          <p class="directions"><span class="arrows" aria-hidden="true">{directionArrows(campaignLevel)}</span><span>{LEVELS[campaignLevel].size}×{LEVELS[campaignLevel].size} · Ordene står {directionDescription(campaignLevel)}.</span></p>
+          <button class="btn primary" onclick={() => campaignForLevel ? openCampaign(campaignForLevel) : startCampaignFlow()} disabled={busy || (!campaignForLevel && !online)}>{busy ? "Henter baner…" : campaignForLevel ? `Fortsæt på ${LEVELS[campaignLevel].name}` : `Start på ${LEVELS[campaignLevel].name}`}</button>
+          {#if !online}<p class="sub">{campaignForLevel ? "Når de hentede baner er spillet, kræver nye baner forbindelse." : "En ny kampagne kræver forbindelse."}</p>{/if}
+        </section>
+
+        <section class="card" id="single" tabindex="-1" bind:this={singleCard} aria-labelledby="single-heading">
+          <h2 id="single-heading">En enkelt bane</h2>
+          <div class="field"><label for="single-category">Kategori</label><select id="single-category" bind:value={category} onchange={() => levelNote = ""}><option value="surprise">Overrask mig</option>{#each Object.entries(CATEGORIES) as [id, item] (id)}<option value={id}>{item.name}</option>{/each}</select></div>
+          <div class="seg" role="group" aria-label="Niveau">
+            {#each levelIds as id (id)}{@const open = available.includes(id)}<button aria-pressed={level === id} aria-disabled={!open} class:locked={!open} onclick={() => { if (open) { level = id; levelNote = ""; } else levelNote = category === "surprise" ? `Ingen kategori har ord nok til ${LEVELS[id].name} endnu.` : `${CATEGORIES[category as CategoryId].name} har ikke ord nok til ${LEVELS[id].name}${childProfile ? " blandt børneordene" : ""}. Vælg et andet niveau eller en anden kategori.`; }}>{#if !open}<Icon name="lock" size={14} />{/if}{LEVELS[id].name}</button>{/each}
+          </div>
+          {#if levelNote}<div class="notice locked" role="status"><Icon name="lock" /><span>{levelNote}</span></div>{/if}
+          <p class="directions"><span class="arrows" aria-hidden="true">{directionArrows(level)}</span><span>{LEVELS[level].size}×{LEVELS[level].size} · Ordene står {directionDescription(level)}.</span></p>
+          <button class="btn outline" onclick={() => startGame()} disabled={busy || !online}>{busy ? "Danner bane…" : "Start bane"}</button>
+          {#if !online}<p class="sub">Nye baner kræver forbindelse. Hentede baner kan spilles offline.</p>{/if}
+        </section>
+
+        <section class="card" id="goals" tabindex="-1" bind:this={goalsCard} aria-labelledby="goals-heading">
+          <div class="card-head"><div><h2 id="goals-heading">Mål</h2><p class="sub">Frivillige og uden tidsfrist. Hvert mål giver 1 hintkredit.</p></div><div class="credits"><span>Hintkreditter</span><b>{credits} af {challengeInfo?.max ?? 5}</b></div></div>
+          {#if challengeInfo}
+            <ul class="goal-list">{#each challengeInfo.challenges as goal (goal.id)}<li>
+              <div class="goal-line"><span>{goal.title}</span><span>{goal.progress} af {goal.target}</span></div>
+              {@render bar(goal.progress, goal.target, `${goal.title}: ${goal.progress} af ${goal.target}`)}
+              {#if goal.completed}<small>Klaret. Kreditten venter, til du har plads under {challengeInfo.max}.</small>{/if}
+            </li>{/each}</ul>
+            {#if pending}<p class="sub">Træk, der venter på synkronisering, tælles med, når de er sendt.</p>{/if}
+          {:else}<p class="sub">Målene vises, når du har forbindelse.</p>{/if}
+        </section>
+      </div>
+
+      <div class="card stack">
+        <details>
+          <summary><span>Gemte baner</span><span class="count">{savedSingles.length ? savedSingles.length : "Ingen gemte baner"}</span><Icon name="down" /></summary>
+          <div class="panel-body">
+            {#if savedSingles.length}
+              <ul class="rows">{#each savedSingles as game (game.id)}<li class="row">
+                <div class="row-main"><b>{CATEGORIES[game.puzzle.category].name} · {LEVELS[game.puzzle.level].name}</b><span>{game.found.length} af {game.puzzle.words.length} ord · {game.abandoned ? "Opgivet" : game.completed ? "Gennemført" : shellReady ? "Klar offline" : "Afventer offlineapp"}</span></div>
+                <button class="btn outline small" onclick={() => chooseGame(game)}>{game.completed ? "Se" : "Fortsæt"}</button>
+              </li>{/each}</ul>
+            {:else}
+              <div class="empty"><Icon name="empty" size={22} /><span>Når du forlader en bane midt i, gemmes den her automatisk.</span><button class="btn outline small" onclick={focusSingle}>Start en bane</button></div>
+            {/if}
+            {#if !storagePersisted}<p class="sub">Browseren kan slette hentede baner ved pladsmangel. Synkronisér, før du rydder browserdata.</p>{/if}
+            {#if online && pending}<button class="btn outline small" onclick={syncAll}>Synkronisér nu</button>{/if}
+          </div>
+        </details>
+        <details>
+          <summary><span>Achievements</span><span class="count">{achievements.filter((item) => item.unlocked).length} af {achievements.length}</span><Icon name="down" /></summary>
+          <div class="panel-body">
+            {#if achievements.length}
+              {#if pending}<p class="sub">{pending} træk afventer synkronisering. Achievements opdateres, når de er modtaget.</p>{/if}
+              {#if nextGoals(achievements).length}
+                <h3 class="minor">Næste mål</h3>
+                <ul class="goal-list">{#each nextGoals(achievements) as item (item.id)}<li>
+                  <div class="goal-line"><span><span aria-hidden="true">{ACHIEVEMENT_ICONS[item.icon]}</span> {item.title}</span><span>{item.current} af {item.target}</span></div>
+                  {@render bar(item.current, item.target, `${item.title}: ${item.current} af ${item.target}`)}
+                </li>{/each}</ul>
+              {/if}
+              <div class="chips" role="group" aria-label="Vis achievements">
+                {#each [["all", "Alle"], ["unlocked", "Optjent"], ["locked", "Mangler"]] as [value, label] (value)}<button class="chip" aria-pressed={achievementFilter === value} onclick={() => achievementFilter = value as typeof achievementFilter}>{label}</button>{/each}
               </div>
-              {#if !online && active.campaignId && !nextCampaignGame}<p class="completion-note">Ingen hentet næste bane er klar. Opret forbindelse for at hente flere.</p>{/if}
-              {#if !online && !active.campaignId && !nextSingleGame}<p class="completion-note">Ingen hentet bane i samme kategori og sværhedsgrad er klar. Opret forbindelse for at hente en ny.</p>{/if}
+              <ul class="badges">{#each shownAchievements as item (item.id)}<li class:unlocked={item.unlocked}>
+                <span class="badge-icon" aria-hidden="true">{ACHIEVEMENT_ICONS[item.icon]}</span>
+                <b>{item.title}</b>
+                <small>{item.description}</small>
+                <small class="badge-state">{item.unlocked ? `✓ ${item.unlockedAt ? new Date(item.unlockedAt).toLocaleDateString("da-DK", { day: "numeric", month: "short", year: "numeric" }) : "Optjent"}` : `${item.current} af ${item.target}`}</small>
+              </li>{/each}</ul>
+            {:else}<p class="sub">Dine achievements vises, når du har forbindelse.</p>{/if}
+          </div>
+        </details>
+        <details>
+          <summary><span>Statistik</span><Icon name="down" /></summary>
+          <div class="panel-body">
+            {#if stats}
+              <dl class="tiles">
+                <div><dt>baner klaret</dt><dd>{stats.completed}</dd></div>
+                <div><dt>ord fundet</dt><dd>{stats.found}</dd></div>
+                <div><dt>forskellige ord</dt><dd>{stats.unique}</dd></div>
+                <div><dt>baner uden hint</dt><dd>{stats.withoutHints}</dd></div>
+                <div><dt>spilledage</dt><dd>{stats.activeDays}</dd></div>
+              </dl>
+              {#if stats.byCategory.length}
+                <table class="table"><caption>Pr. kategori</caption><thead><tr><th scope="col">Kategori</th><th scope="col" class="num">Baner</th><th scope="col" class="num">Ord</th></tr></thead>
+                  <tbody>{#each stats.byCategory as row (row.category)}<tr><th scope="row">{CATEGORIES[row.category as CategoryId]?.name ?? row.category}</th><td class="num">{row.completed}</td><td class="num">{row.found}</td></tr>{/each}</tbody></table>
+              {/if}
+              {#if pending}<p class="sub">Tallene er fra sidste synkronisering.</p>{/if}
+            {:else}<p class="sub">Din statistik vises, når du har forbindelse.</p>{/if}
+          </div>
+        </details>
+        <details bind:this={accountPanel}>
+          <summary><span>Min konto</span><Icon name="down" /></summary>
+          <div class="panel-body">
+            <div class="me">{@render avatar(identity.avatar, "large")}<div><b>{identity.name}</b><span>@{identity.username} · {identity.child ? "Barn" : "Voksen"}{identity.role === "admin" ? " · Administrator" : ""}</span></div></div>
+            <p class="sub">Kun en administrator kan ændre profiltypen.</p>
+            {#if online && !sessionExpired}
+              {#if editingProfile}
+                <form class="form" onsubmit={(event) => { event.preventDefault(); void saveProfile(); }}>
+                  <label class="field"><span>Visningsnavn</span><input bind:value={profileName} maxlength="80" required /></label>
+                  <fieldset class="avatar-choice"><legend>Avatar</legend>
+                    {#each Object.entries(AVATARS) as [id, symbol] (id)}<label class={`tint-${avatarTint(id)}`}><input type="radio" name="avatar" value={id} bind:group={profileAvatar} /><span aria-hidden="true">{symbol}</span><span class="sr-only">{AVATAR_NAMES[id as keyof typeof AVATARS]}</span></label>{/each}
+                  </fieldset>
+                  <div class="actions"><button class="btn primary" type="submit">Gem profil</button><button class="btn plain" type="button" onclick={() => editingProfile = false}>Annullér</button></div>
+                </form>
+              {:else}<button class="btn outline" onclick={startProfileEdit}>Ret navn og avatar</button>{/if}
+              <form class="form" onsubmit={(event) => { event.preventDefault(); void changePassword(); }}>
+                <h3 class="minor">Skift adgangskode</h3>
+                <label class="field"><span>Nuværende adgangskode</span><input type="password" autocomplete="current-password" bind:value={currentPassword} required /></label>
+                <label class="field"><span>Ny adgangskode</span><input type="password" autocomplete="new-password" minlength="8" bind:value={nextPassword} required /><small>Mindst 8 tegn. Andre enheder logges ud.</small></label>
+                <div class="actions"><button class="btn outline" type="submit" disabled={changingPassword}>{changingPassword ? "Ændrer…" : "Skift adgangskode"}</button></div>
+              </form>
+            {:else}<p class="sub">Navn, avatar og adgangskode kan ændres, når du er logget ind med forbindelse.</p>{/if}
+            <div class="actions"><button class="btn neutral" onclick={signOut} disabled={markingWord}>Log ud</button></div>
+          </div>
+        </details>
+      </div>
+
+      {#if identity.role === "admin"}
+        <div class="divider"><span>Administration</span></div>
+        <div class="card stack">
+          <details ontoggle={(event) => { if ((event.currentTarget as HTMLDetailsElement).open && !showAccounts) void loadAccounts(); }}>
+            <summary><span>Spillere og konti</span><span class="count">{showAccounts ? `${accounts.length} konti` : ""}</span><Icon name="down" /></summary>
+            <div class="panel-body">
+              {#if showAccounts}
+                <p class="sub">Børneprofiler får kun børnebaner. Ændres profiltypen, logges kontoen ud på alle enheder, og baner til den gamle profiltype fjernes ved næste forbindelse.</p>
+                <label class="field narrow"><span>Din adgangskode</span><input type="password" autocomplete="current-password" bind:value={adminPassword} /><small>Kræves for at ændre profiltype.</small></label>
+                <ul class="accounts">{#each accounts as account (account.id)}<li class="row">
+                  {@render avatar(account.avatar)}
+                  <div class="row-main"><b>{account.name} <span class="handle">@{account.username}</span></b>
+                    <span class="tags">{account.role === "admin" ? "Administrator" : account.child ? "Barn" : "Voksen"}{#if account.child}<span class="tag kid">Børneord</span>{/if}{#if account.banned}<span class="tag off">Deaktiveret</span>{/if}</span>
+                    {#if account.id !== identity.id}<span class="row-actions">
+                      {#if account.role !== "admin"}<button class="btn plain small" onclick={() => setChildProfile(account, !account.child)}>{account.child ? "Gør til voksen" : "Gør til barn"}</button>{/if}
+                      <button class="btn plain small" onclick={() => setBanned(account, !account.banned)}>{account.banned ? "Genaktivér" : "Deaktivér"}</button>
+                      <button class="btn plain small" onclick={() => resetPassword(account)}>Nulstil adgangskode</button>
+                      <button class="btn plain small danger" onclick={() => deleteAccount(account)}>Slet konto</button>
+                    </span>{/if}
+                  </div>
+                </li>{/each}</ul>
+                <form class="form new-account" onsubmit={(event) => { event.preventDefault(); void createAccount(); }}>
+                  <h3 class="minor">Ny spiller</h3>
+                  <label class="field"><span>Navn</span><input bind:value={newName} required /></label>
+                  <label class="field"><span>Brugernavn</span><input bind:value={newUser} pattern={"[A-Za-z0-9_.\\-]{3,30}"} required /></label>
+                  <label class="field"><span>Adgangskode</span><input type="password" minlength="8" autocomplete="new-password" bind:value={newPassword} required /></label>
+                  <label class="check"><input type="checkbox" bind:checked={newChild} /> Børneprofil</label>
+                  <div class="actions"><button class="btn primary" type="submit">Opret spiller</button></div>
+                </form>
+              {:else}<p class="sub">Henter konti…</p>{/if}
             </div>
-          {/if}
-          <div class="letter-grid" id="letter-grid" tabindex="-1" style={`--size:${active.puzzle.grid.length}`} onpointerdown={pointerDown} onpointermove={pointerMove} onpointerup={pointerUp} onpointercancel={pointerCancel} onlostpointercapture={pointerCancel} role="group" aria-label="Bogstavgitter">
+          </details>
+          <details ontoggle={(event) => { if ((event.currentTarget as HTMLDetailsElement).open && !wordAdmin) void loadWordAdmin(); }}>
+            <summary><span>Ordlister</span><span class="count">{wordAdmin ? `${wordAdmin.coverage.length} kategorier` : ""}</span><Icon name="down" /></summary>
+            <div class="panel-body">
+              {#if wordAdmin}
+                <p class="sub">Find ord {wordAdmin.versions.app} · ordliste v{wordAdmin.versions.words} · kategorier v{wordAdmin.versions.categories} · børnepolitik v{wordAdmin.versions.childPolicy} · validering v{wordAdmin.versions.validation} · COR {wordAdmin.versions.cor} · {wordAdmin.blockedSequences} blokerede sekvenser. Listerne ændres i koden efter den redaktionelle procedure i <code>docs/ordindhold.md</code>; git er historikken, og rollback sker med en tidligere udgave.</p>
+                <!-- A scrollable region must be reachable by keyboard (axe: scrollable-region-focusable). -->
+                <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+                <div class="table-scroll" tabindex="0" role="region" aria-label="Dækning pr. kategori og niveau"><table class="table"><caption>Dækning: ord med niveauets længde, voksen / barn</caption>
+                  <thead><tr><th scope="col">Kategori</th>{#each Object.entries(LEVELS) as [id, item] (id)}<th scope="col">{item.name}<small> ({item.words})</small></th>{/each}</tr></thead>
+                  <tbody>{#each wordAdmin.coverage as row (row.category)}<tr><th scope="row">{row.name}</th>{#each Object.keys(LEVELS) as id (id)}{@const cell = row.levels[id]}<td class:closed={!cell.adultOpen || !cell.childOpen}>{cell.adult} / {cell.child}{#if !cell.childOpen}<small> lukket for børn</small>{/if}{#if !cell.adultOpen}<small> lukket</small>{/if}</td>{/each}</tr>{/each}</tbody></table></div>
+                <div class="filters">
+                  <label class="field"><span>Søg i ord</span><input type="search" bind:value={wordQuery} autocomplete="off" placeholder="fx brød, ø" /></label>
+                  <label class="field"><span>Kategori</span><select bind:value={wordCategory}><option value="">Alle</option>{#each Object.entries(CATEGORIES) as [id, item] (id)}<option value={id}>{item.name}</option>{/each}</select></label>
+                  <label class="field"><span>Børn</span><select bind:value={wordChild}><option value="">Alle</option><option value="ja">Godkendt</option><option value="nej">Kun voksne</option></select></label>
+                </div>
+                <p class="sub" aria-live="polite">{shownWords.length} af {wordAdmin.words.length} tilknytninger{shownWords.length > 200 ? " (de første 200 vises)" : ""}.</p>
+                <!-- A scrollable region must be reachable by keyboard (axe: scrollable-region-focusable). -->
+                <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+                <div class="table-scroll" tabindex="0" role="region" aria-label="Ord og kilder"><table class="table"><thead><tr><th scope="col">Ord</th><th scope="col">Kategori</th><th scope="col">Børn</th><th scope="col">Læseniveau</th><th scope="col">COR-kilde</th></tr></thead>
+                  <tbody>{#each shownWords.slice(0, 200) as item (`${item.category}/${item.word}`)}<tr><td class="mono">{item.word}</td><td>{CATEGORIES[item.category].name}</td><td>{item.child ? "Godkendt" : `Nej: ${item.reason}`}</td><td>{item.readingLevel}</td><td><small>{item.sources.join(", ") || "mangler"}</small></td></tr>{/each}</tbody></table></div>
+              {:else}<p class="sub">{wordAdminError || "Henter ordlisterne…"}</p>{/if}
+            </div>
+          </details>
+        </div>
+      {/if}
+    </div>
+  {:else}
+    {@const remaining = hintsRemaining(active.puzzle.level, active.hints)}
+    <div class="game" class:split class:short={shortLandscape} bind:clientWidth={stageWidth}>
+      <div class="game-top">
+        <button class="icon-btn" onclick={leaveGame} disabled={markingWord} aria-label="Til forsiden"><Icon name="back" size={20} /></button>
+        <div class="title"><h1>{CATEGORIES[active.puzzle.category].name}</h1><p>{LEVELS[active.puzzle.level].name} · {size}×{size}{active.campaignId ? ` · bane ${active.campaignPosition} i kampagnen` : ""} · {DIRECTION_SHORT[LEVELS[active.puzzle.level].directions]}</p></div>
+        {#if !roomy}<span class="top-pill">{@render pill(gamePill, true)}</span>{/if}
+        {#if $updateReady && !active.completed}<span class="pill info compact"><Icon name="update" size={15} /><span class="pill-text">Ny version efter banen</span></span>{/if}
+      </div>
+      {#if identity.child}<div class="kid-note">{@render avatar(identity.avatar)}<span><b>Du spiller med børneord.</b> Ordene er godkendt til børn, og gitteret tjekkes for uønskede ord. Ingen kontrol fanger alt, så sig til en voksen, hvis du ser noget mærkeligt.</span></div>{/if}
+      <div class="progress-row"><b>{active.found.length} af {active.puzzle.words.length} ord</b>{@render bar(active.found.length, active.puzzle.words.length, "Fremdrift")}</div>
+
+      <div class="stage">
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="grid-viewport" class:navigate={overview && zoomable} class:done={active.completed} bind:this={gridViewport} style={`--cell:${cellPx}px;--glyph:${cellPx < 24 ? 0.6 : 0.54};width:${shownCells * cellPx}px;height:${shownCells * cellPx}px`} onpointerdown={pointerDown} onpointermove={pointerMove} onpointerup={pointerUp} onpointercancel={pointerCancel} onlostpointercapture={pointerCancel} onscroll={(event) => { event.currentTarget.scrollTop = 0; event.currentTarget.scrollLeft = 0; }}>
+          <div class="letter-grid" id="letter-grid" bind:this={gridInner} role="group" aria-label={`Bogstavgitter, ${CATEGORIES[active.puzzle.category].name}, ${size} gange ${size}${zoomed ? `, udsnit fra række ${view.r0 + 1}, kolonne ${view.c0 + 1}` : ""}${overview && zoomable ? ". Overblik: vælg et felt for at zoome ind" : ""}`} style={`--size:${size};transform:translate(${zoomed ? -view.c0 * cellPx : 0}px,${zoomed ? -view.r0 * cellPx : 0}px)`}>
+            <svg class="caps" viewBox={`0 0 ${size} ${size}`} preserveAspectRatio="none" aria-hidden="true" focusable="false">
+              {#each foundCaps as item (item.word)}{@const c = capsule(item.start, item.end)}<rect class={`cap found-${item.color}`} x={-c.w / 2} y={-c.h / 2} width={c.w} height={c.h} rx={c.h / 2} transform={`translate(${c.cx} ${c.cy}) rotate(${c.angle})`} vector-effect="non-scaling-stroke" />{/each}
+              {#each missedCaps as item (item.word)}{@const c = capsule(item.start, item.end)}<rect class="cap missed" x={-c.w / 2} y={-c.h / 2} width={c.w} height={c.h} rx={c.h / 2} transform={`translate(${c.cx} ${c.cy}) rotate(${c.angle})`} vector-effect="non-scaling-stroke" />{/each}
+              {#if previewStart && previewEnd && (previewStart.row !== previewEnd.row || previewStart.col !== previewEnd.col)}{@const c = capsule(previewStart, previewEnd)}<rect class="cap" class:preview={dragStart !== null} class:rejected={rejectedStart !== null && dragStart === null} x={-c.w / 2} y={-c.h / 2} width={c.w} height={c.h} rx={c.h / 2} transform={`translate(${c.cx} ${c.cy}) rotate(${c.angle})`} vector-effect="non-scaling-stroke" />{/if}
+            </svg>
             {#each active.puzzle.grid as row, rowIndex (rowIndex)}
               {#each row as letter, colIndex (colIndex)}
-                <button class:found-cell={foundCells.some((cell) => cell.row === rowIndex && cell.col === colIndex)} class:hint-start={shownHint?.start.row === rowIndex && shownHint?.start.col === colIndex} class:preview-cell={selectedCells.some((cell) => cell.row === rowIndex && cell.col === colIndex)} class:preview-start={previewStart?.row === rowIndex && previewStart?.col === colIndex} class:preview-end={previewEnd?.row === rowIndex && previewEnd?.col === colIndex && (previewStart?.row !== rowIndex || previewStart?.col !== colIndex)} class:rejected-cell={rejectedStart !== null && dragStart === null && selectedCells.some((cell) => cell.row === rowIndex && cell.col === colIndex)} class:tap-start={selectedStart?.row === rowIndex && selectedStart?.col === colIndex} data-row={rowIndex} data-col={colIndex} tabindex={focusCell.row === rowIndex && focusCell.col === colIndex ? 0 : -1} onfocus={() => focusCell = { row: rowIndex, col: colIndex }} onkeydown={(event) => keyCell(event, rowIndex, colIndex)} aria-label={`Række ${rowIndex + 1}, kolonne ${colIndex + 1}, ${letter}${shownHint?.start.row === rowIndex && shownHint?.start.col === colIndex ? `, startfelt for hint til ${shownHint.word}` : ""}${selectedStart?.row === rowIndex && selectedStart?.col === colIndex ? ", valgt startfelt" : ""}`}><span>{letter}</span></button>
+                <button class:start={(dragStart?.row === rowIndex && dragStart?.col === colIndex) || (selectedStart?.row === rowIndex && selectedStart?.col === colIndex)} class:hint-start={shownHint?.start.row === rowIndex && shownHint?.start.col === colIndex} data-row={rowIndex} data-col={colIndex} tabindex={focusCell.row === rowIndex && focusCell.col === colIndex ? 0 : -1} onfocus={() => { focusCell = { row: rowIndex, col: colIndex }; ensureVisible(focusCell); }} onkeydown={(event) => keyCell(event, rowIndex, colIndex)} aria-label={`${letter}, række ${rowIndex + 1}, kolonne ${colIndex + 1}${shownHint?.start.row === rowIndex && shownHint?.start.col === colIndex ? `, startfelt for hint til ${shownHint.word}` : ""}${selectedStart?.row === rowIndex && selectedStart?.col === colIndex ? ", valgt startfelt" : ""}`}><span>{letter}</span></button>
               {/each}
             {/each}
-            {#if previewStart && previewEnd && (previewStart.row !== previewEnd.row || previewStart.col !== previewEnd.col)}
-              <svg class="selection-line" class:rejected-line={rejectedStart !== null && dragStart === null} viewBox={`0 0 ${active.puzzle.grid.length} ${active.puzzle.grid.length}`} preserveAspectRatio="none" aria-hidden="true" focusable="false"><line x1={previewStart.col + 0.5} y1={previewStart.row + 0.5} x2={previewEnd.col + 0.5} y2={previewEnd.row + 0.5} /></svg>
-            {/if}
+            {#if rejectedEnd && rejectedStart && !dragStart}<span class="reject-badge" aria-hidden="true" style={`left:${(rejectedEnd.col + 1) / size * 100}%;top:${rejectedEnd.row / size * 100}%`}>✕</span>{/if}
           </div>
-          <p class="grid-tip">Træk fra første til sidste bogstav, eller tryk på de to ender. Brug piletasterne på tastatur.</p>
-          {#if shownHint && selectionFeedback !== `Hint til ${shownHint.word}: begynd i række ${shownHint.start.row + 1}, kolonne ${shownHint.start.col + 1}.`}<p class="hint-location">Hint til {shownHint.word}: begynd i række {shownHint.start.row + 1}, kolonne {shownHint.start.col + 1}. Det blå felt viser starten.</p>{/if}
-          <p class="selection-feedback" role="status">{selectionFeedback}</p>
-          {#if message && message !== selectionFeedback}<div class="game-message" role="status"><span>{message}</span><button aria-label="Luk besked" onclick={() => message = ""}>×</button></div>{/if}
-          {#if !active.completed}
-            <div class="hint-controls"><button class="secondary hint-button" onclick={hint} disabled={hintSaving || hintsRemaining(active.puzzle.level, active.hints) === 0 || credits < 1}>Vis et hint · 1 kredit</button><span>Hints tilbage: {hintsRemaining(active.puzzle.level, active.hints)}/{HINT_LIMIT[active.puzzle.level]} · Kreditter: {credits}</span><button class="text-button abandon-button" onclick={abandon} disabled={markingWord || hintSaving}>Opgiv bane</button></div>
-            {#if hintsRemaining(active.puzzle.level, active.hints) === 0}<p class="hint-explanation">Alle hints på denne bane er brugt.</p>
-            {:else if credits < 1}<p class="hint-explanation">Du har ingen hintkreditter. Klar et mål for at få flere. <button class="text-button" onclick={showGoals} disabled={markingWord}>Se målene</button></p>{/if}
-          {/if}
-        </section>
-        <aside class="card word-card" id="word-list" tabindex="-1"><div class="grid-header"><span>ORDLISTE</span><span>{active.found.length} / {active.puzzle.words.length}</span><a class="grid-jump" href="#letter-grid">Til gitteret ↑</a></div><div class="words">
-          {#each active.puzzle.words as word (word)}<div class:found={active.found.includes(word)} class:hinted={shownHint?.word === word}><span class="check">{active.found.includes(word) ? "✓" : ""}</span><span>{word}</span><span class="hintmark">{active.hints.includes(word) ? "· hint" : ""}</span></div>{/each}
+          {#if gridToast}<div class={`grid-toast ${gridToast.kind}`} aria-hidden="true">{gridToast.text}</div>{/if}
+        </div>
+        {#if zoomable}
+          <div class="zoom-controls">
+            <button class="minimap" onclick={miniClick} aria-label="Minikort. Tryk for at flytte udsnittet." style={`--size:${size}`}>
+              {#if shownHint}<span class="mini-hint" style={`left:${(shownHint.start.col + 0.5) / size * 100}%;top:${(shownHint.start.row + 0.5) / size * 100}%`}></span>{/if}
+              {#if zoomed}<span class="mini-view" style={`left:${view.c0 / size * 100}%;top:${view.r0 / size * 100}%;width:${viewCells / size * 100}%;height:${viewCells / size * 100}%`}></span>{/if}
+            </button>
+            <div class="zoom-side">
+              <div class="seg" role="group" aria-label="Visning"><button aria-pressed={overview} onclick={() => overview = true}>Hele gitteret</button><button aria-pressed={!overview} onclick={() => overview = false}>Tæt på</button></div>
+              {#if zoomed}
+                <div class="pan" role="group" aria-label="Flyt udsnit">
+                  <button class="icon-btn" onclick={() => pan(0, -panStep)} aria-label="Flyt til venstre" disabled={view.c0 === 0}><Icon name="left" /></button>
+                  <button class="icon-btn" onclick={() => pan(-panStep, 0)} aria-label="Flyt op" disabled={view.r0 === 0}><Icon name="up" /></button>
+                  <button class="icon-btn" onclick={() => pan(panStep, 0)} aria-label="Flyt ned" disabled={view.r0 >= size - viewCells}><Icon name="down" /></button>
+                  <button class="icon-btn" onclick={() => pan(0, panStep)} aria-label="Flyt til højre" disabled={view.c0 >= size - viewCells}><Icon name="right" /></button>
+                </div>
+              {:else}<p class="sub">Tryk der, hvor du vil zoome ind. Markering sker i “Tæt på”.</p>{/if}
+            </div>
           </div>
-        </aside>
+        {/if}
       </div>
-    {/if}
+
+      <div class="panel">
+        <p class="sr-only" role="status">{selectionFeedback}</p>
+        {#if message && message !== selectionFeedback}<div class="notice game-message" role="status"><Icon name="info" /><span>{message}</span><button class="icon-btn plain" aria-label="Luk besked" onclick={() => message = ""}>×</button></div>{/if}
+        {#if active.completed}
+          <section class="result" class:abandoned={active.abandoned} aria-live="polite">
+            <div class="result-head"><span class="result-icon" aria-hidden="true"><Icon name={active.abandoned ? "info" : "check"} size={24} /></span><div><h2 tabindex="-1" bind:this={completionHeading}>{active.abandoned ? "Banen er opgivet" : `${CATEGORIES[active.puzzle.category].name} er klaret`}</h2><p>{active.abandoned ? `Du fandt ${active.found.length} af ${active.puzzle.words.length} ord. De resterende ord er vist i gitteret. En opgivet bane tæller ikke som gennemført.` : `Alle ${active.puzzle.words.length} ord fundet · ${active.hints.length === 0 ? "uden hint" : active.hints.length === 1 ? "1 hint brugt" : `${active.hints.length} hints brugt`}`}</p></div></div>
+            <p class="sub">{activePending ? "Resultatet er gemt på enheden og afventer synkronisering. Nye achievements beregnes, når det er synkroniseret." : "Resultatet er gemt."}</p>
+            {#if newAchievements.length}
+              <div class="new-badges"><b>{newAchievements.length === 1 ? "Ny achievement" : "Nye achievements"}</b>
+                {#each newAchievements as item (item.id)}<div class="row"><span class="badge-icon" aria-hidden="true">{ACHIEVEMENT_ICONS[item.icon]}</span><div class="row-main"><b>{item.title}</b><span>{item.description}</span></div><span class="tag new">NY</span></div>{/each}
+              </div>
+            {/if}
+            {#if nearestGoal}<p class="goal-teaser">Mål: <b>{nearestGoal.title}</b> – nu {nearestGoal.progress} af {nearestGoal.target}.</p>{/if}
+            <div class="result-actions">
+              {#if active.campaignId}<button class="btn primary large" onclick={nextInCampaign} disabled={busy}>{busy ? "Henter bane…" : `Næste bane · ${(active.campaignPosition ?? 0) + 1}`}</button>
+              {:else}<button class="btn primary large" onclick={newSingleGame} disabled={busy}>{busy ? "Henter bane…" : `Ny bane i ${CATEGORIES[active.puzzle.category].name}`}</button>{/if}
+              <button class="btn neutral large" onclick={leaveGame}>Forside</button>
+            </div>
+            {#if !online && active.campaignId && !nextCampaignGame}<p class="sub">Ingen hentet næste bane er klar. Opret forbindelse for at hente flere.</p>{/if}
+            {#if !online && !active.campaignId && !nextSingleGame}<p class="sub">Ingen hentet bane i samme kategori og sværhedsgrad er klar. Opret forbindelse for at hente en ny.</p>{/if}
+          </section>
+        {:else}
+          <div class="hint-row" role="group" aria-label="Hjælp og bane">
+            {#if shownHint}<div class="hint-shown"><span class="hint-dot" aria-hidden="true"></span>Hint vist i gitteret</div>
+            {:else}<button class="btn outline hint-btn" onclick={hint} disabled={hintSaving || remaining === 0 || credits < 1}><Icon name="bulb" size={20} /><span>Hint</span><span class="tag ok">1 kredit</span></button>{/if}
+            <div class="credits"><span>Hintkreditter</span><b>{credits} af {challengeInfo?.max ?? 5}</b></div>
+            <button class="btn plain underline" onclick={() => { confirmAbandon = true; void tick().then(() => abandonDialog?.focus()); }} disabled={markingWord || hintSaving}>Opgiv bane</button>
+          </div>
+          <p class="sub">{shownHint ? `Hint: ${shownHint.word} starter i række ${shownHint.start.row + 1}, kolonne ${shownHint.start.col + 1}. Den gule stiplede cirkel viser feltet.` : `Hintbudget på banen: ${remaining} af ${HINT_LIMIT[active.puzzle.level]} tilbage.`}</p>
+          {#if remaining === 0}<div class="notice">Banens hintbudget er brugt. Dine kreditter er gemt til næste bane.</div>
+          {:else if credits < 1 && !shownHint}<div class="notice empty-credits"><span class="zero" aria-hidden="true">0</span><div><b>Ingen hintkreditter lige nu</b><span>Du får nye kreditter, når du når et af dine frivillige mål.</span><button class="link" onclick={showGoals} disabled={markingWord}>Se dine mål →</button></div></div>{/if}
+          {#if confirmAbandon}
+            <div class="confirm" role="alertdialog" aria-labelledby="abandon-title" aria-describedby="abandon-text" tabindex="-1" bind:this={abandonDialog}>
+              <b id="abandon-title">Opgiv banen?</b><span id="abandon-text">De resterende ord bliver vist. En opgivet bane tæller ikke som gennemført og kan ikke spilles videre.</span>
+              <div class="actions"><button class="btn primary" onclick={() => confirmAbandon = false}>Spil videre</button><button class="btn neutral strong" onclick={abandon}>Opgiv og vis ordene</button></div>
+            </div>
+          {/if}
+        {/if}
+        <section class="word-list" aria-labelledby="words-heading">
+          <h2 id="words-heading">{active.completed ? "Ordene" : "Ord at finde"}</h2>
+          <ul>{#each active.puzzle.words as word (word)}{@const found = active.found.includes(word)}{@const hinted = !found && shownHint?.word === word}<li class:found class:hinted>
+            <span class="mark" aria-hidden="true">{#if found}<Icon name="check" size={14} />{/if}</span><span class="word">{word}</span>{#if found}<span class="sr-only">, fundet</span>{/if}{#if hinted}<span class="tag hint">HINT</span>{/if}
+          </li>{/each}</ul>
+        </section>
+        {#if roomy && !active.completed}<p class="keys"><span><kbd>← ↑ → ↓</kbd> flyt</span><span><kbd>Enter</kbd> start / slut</span><span><kbd>Esc</kbd> annullér</span></p>{/if}
+      </div>
+    </div>
   {/if}
-  {#if message && !active}<div class="toast" role="status"><span>{message}</span><button aria-label="Luk besked" onclick={() => message = ""}>×</button></div>{/if}
+  {#if message && !active && identity && !loading}<div class="toast" role="status"><span>{message}</span><button aria-label="Luk besked" onclick={() => message = ""}>×</button></div>{/if}
 </main>
+
+{#snippet bar(value: number, max: number, label: string)}
+  <div class="bar" role="progressbar" aria-label={label} aria-valuemin="0" aria-valuemax={max} aria-valuenow={value}><span style={`width:${max ? Math.min(100, value / max * 100) : 0}%`}></span></div>
+{/snippet}
