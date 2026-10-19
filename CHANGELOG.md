@@ -1,5 +1,25 @@
 # Udgivelser
 
+## 0.2.0 – 2026-10-19
+
+Nyt udseende efter redesignet i Claude Design ([TEA-66](https://linear.app/team-vre/issue/TEA-66)). Stadig en forudgivelse: test på fysiske enheder mangler ([TEA-48](https://linear.app/team-vre/issue/TEA-48)).
+
+### Udseende
+
+- Nye farver med mørk tilstand og skrifterne Atkinson Hyperlegible og Bricolage Grotesque, som ligger i appen og virker offline.
+- Forside, login, opsætning af første administrator og administration følger det nye layout. Låste niveauer vises med lås og forklaring.
+
+### Spil
+
+- Fundne ord får en farvet kapsel, og korte beskeder vises øverst i gitteret.
+- 16×16 og 20×20 på små skærme vises som et udsnit med minikort, pileknapper og panorering ved kanten under et træk. "Hele gitteret" giver overblik.
+- Ét hint ad gangen. "Opgiv bane" bekræftes direkte på siden, og de manglende ord vises bagefter i gitteret.
+
+### Kendte begrænsninger
+
+- Kantpanorering og felter på 35 px er ikke testet på en rigtig telefon.
+- Engangskode til nye spillere, "Sidst aktiv" og meddelelsen om fuld disk fra designet er ikke med.
+
 ## 0.1.0 – 2026-10-18
 
 Første udgivelse. Det er en forudgivelse: alt kører og er testet i browser og Docker, men testen på fysiske iPhone-, iPad- og Android-enheder mangler stadig ([TEA-48](https://linear.app/team-vre/issue/TEA-48)). Version 1.0.0 udkommer, når releasechecket i [TEA-40](https://linear.app/team-vre/issue/TEA-40) er gennemført.
