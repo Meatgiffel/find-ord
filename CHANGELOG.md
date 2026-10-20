@@ -5,6 +5,7 @@
 ### Data
 
 - Serveren gemmer enhedens rækkefølge og tidspunkt for hvert træk adskilt fra servertiden (databasemigration 10). Opbevaringspolitikken for spildata står i [arkitektur- og API-beskrivelsen](docs/arkitektur-og-api.md#opbevaring-og-genberegning) ([TEA-35](https://linear.app/team-vre/issue/TEA-35)).
+- Samtidige synkroniseringer af samme bane kan ikke længere overskrive hinandens fund; banens tilstand læses inde i skrivetransaktionen ([TEA-9](https://linear.app/team-vre/issue/TEA-9)).
 
 ## 0.2.0 – 2026-10-19
 

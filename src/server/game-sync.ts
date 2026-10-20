@@ -27,10 +27,11 @@ type StoredEvent = { game_id: string; user_id: string; kind: string; word: strin
 export function applyGameEvents(db: Database.Database, row: GameRow, userId: string, events: SyncEvent[]): SyncResult {
   if (row.user_id !== userId) throw new GameSyncError("Banen blev ikke fundet.");
   const puzzle = JSON.parse(row.puzzle) as Puzzle;
-  const found = new Set(JSON.parse(row.found) as string[]);
-  const hints = new Set(JSON.parse(row.hints) as string[]);
-  let completed = Boolean(row.completed);
-  let abandoned = Boolean(row.abandoned);
+  let found = new Set<string>();
+  let hints = new Set<string>();
+  let completed = false;
+  let abandoned = false;
+  let revision = row.revision;
   let applied = 0;
   const acknowledged: string[] = [];
   const rejected: Array<{ id: string; error: string }> = [];
@@ -51,6 +52,15 @@ export function applyGameEvents(db: Database.Database, row: GameRow, userId: str
   }
 
   db.transaction(() => {
+    // The state is read inside the transaction, so a row loaded earlier (or by another
+    // connection) cannot overwrite moves stored since.
+    const current = db.prepare("SELECT found, hints, completed, abandoned, revision FROM game WHERE id = ?").get(row.id) as Pick<GameRow, "found" | "hints" | "completed" | "abandoned" | "revision"> | undefined;
+    if (!current) throw new GameSyncError("Banen blev ikke fundet.");
+    found = new Set(JSON.parse(current.found) as string[]);
+    hints = new Set(JSON.parse(current.hints) as string[]);
+    completed = Boolean(current.completed);
+    abandoned = Boolean(current.abandoned);
+    revision = current.revision;
     for (const event of events) {
       const existing = db.prepare("SELECT game_id, user_id, kind, word FROM game_event WHERE id = ?").get(event.id) as StoredEvent | undefined;
       if (existing) {
@@ -84,6 +94,6 @@ export function applyGameEvents(db: Database.Database, row: GameRow, userId: str
       awardAchievements(db, userId);
       updateChallenges(db, userId, puzzle.child);
     }
-  })();
-  return { found: [...found], hints: [...hints], completed, abandoned, revision: row.revision + (applied ? 1 : 0), acknowledged, rejected };
+  }).immediate();
+  return { found: [...found], hints: [...hints], completed, abandoned, revision: revision + (applied ? 1 : 0), acknowledged, rejected };
 }

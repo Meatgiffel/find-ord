@@ -1,4 +1,7 @@
 import Database from "better-sqlite3";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { applyGameEvents, loadGameForUser, type GameRow, type SyncEvent } from "./game-sync.js";
 import { migrateGameData } from "./migrations.js";
@@ -128,6 +131,40 @@ describe("serverens hintbudget", () => {
     expect((db.prepare("SELECT COUNT(*) AS count FROM hint_credit WHERE ref LIKE 'hint:%'").get() as { count: number }).count).toBe(0);
     db.exec("DROP TRIGGER fail_hint");
     expect(apply(puzzle.id, [find]).found).toEqual([word]);
+  });
+
+  it("mister ingen træk ved samtidige forbindelser med forældet banerække", () => {
+    const directory = mkdtempSync(join(tmpdir(), "find-ord-sync-"));
+    const first = new Database(join(directory, "db.sqlite"));
+    const second = new Database(join(directory, "db.sqlite"), { timeout: 0 });
+    try {
+      first.pragma("journal_mode = WAL");
+      first.exec("CREATE TABLE user (id TEXT PRIMARY KEY); INSERT INTO user (id) VALUES ('alice')");
+      migrateGameData(first);
+      db = first;
+      const puzzle = insertPuzzle("let");
+      // Both connections load the row before either writes.
+      const stale = second.prepare("SELECT * FROM game WHERE id = ?").get(puzzle.id) as GameRow;
+      const [a, b] = puzzle.words;
+      applyGameEvents(first, row(puzzle.id), "alice", [{ ...event("find", a), ...findWord(puzzle, a)! }]);
+      const result = applyGameEvents(second, stale, "alice", [{ ...event("find", b), ...findWord(puzzle, b)! }]);
+      expect(result.found).toEqual([a, b]);
+      expect(result.revision).toBe(2);
+      expect(JSON.parse(row(puzzle.id).found)).toEqual([a, b]);
+
+      // While one connection holds the write lock, the other fails without partial writes.
+      first.exec("BEGIN IMMEDIATE");
+      const c = puzzle.words[2];
+      expect(() => applyGameEvents(second, stale, "alice", [{ ...event("find", c), ...findWord(puzzle, c)! }])).toThrow(/locked|busy/i);
+      first.exec("ROLLBACK");
+      expect(JSON.parse(row(puzzle.id).found)).toEqual([a, b]);
+      expect((first.prepare("SELECT COUNT(*) AS count FROM game_event").get() as { count: number }).count).toBe(2);
+    } finally {
+      second.close();
+      first.close();
+      db = new Database(":memory:");
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("holder to brugeres baner og hændelser adskilt", () => {
