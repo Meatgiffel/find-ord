@@ -1,6 +1,6 @@
 # Udgivelser
 
-## Ikke udgivet
+## 0.2.1 – 2026-10-20
 
 ### Data
 
