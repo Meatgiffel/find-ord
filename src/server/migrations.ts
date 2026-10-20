@@ -179,6 +179,17 @@ const migrations: Migration[] = [
         );
       `);
     }
+  },
+  {
+    version: 10,
+    apply(db) {
+      // The client's own order and clock for each event, kept apart from the server time
+      // in created_at. They are informational: rules and statistics use server time.
+      db.exec(`
+        ALTER TABLE game_event ADD COLUMN client_sequence INTEGER;
+        ALTER TABLE game_event ADD COLUMN client_at TEXT;
+      `);
+    }
   }
 ];
 

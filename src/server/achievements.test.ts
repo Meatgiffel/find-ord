@@ -93,6 +93,39 @@ describe("achievement-motor", () => {
     expect(items.find((item) => item.id === "days-30")?.current).toBe(7);
   });
 
+  it("tæller spilledage efter dansk tid over midnat og sommertidsskift", () => {
+    const zone = process.env.TZ;
+    process.env.TZ = "Europe/Copenhagen";
+    try {
+      const puzzle = game("alice", "dyr");
+      const insert = db.prepare("INSERT INTO game_event (id, game_id, user_id, kind, word, created_at) VALUES (?, ?, 'alice', 'find', ?, ?)");
+      // Server time is UTC. 22:30 and 23:30 UTC on 28 March fall either side of midnight (CET).
+      insert.run("m-1", puzzle.id, "A", "2026-03-28 22:30:00");
+      insert.run("m-2", puzzle.id, "B", "2026-03-28 23:30:00");
+      // After the switch to summer time on 29 March, 22:30 UTC is already 30 March.
+      insert.run("s-1", puzzle.id, "C", "2026-03-29 21:30:00");
+      insert.run("s-2", puzzle.id, "D", "2026-03-29 22:30:00");
+      // After the switch back on 25 October, 22:30 UTC is still 25 October.
+      insert.run("w-1", puzzle.id, "E", "2026-10-25 21:30:00");
+      insert.run("w-2", puzzle.id, "F", "2026-10-25 22:30:00");
+      // 28, 29 and 30 March and 25 October. A fixed UTC+1 or plain UTC would give 3.
+      expect(statsForUser(db, "alice").activeDays).toBe(4);
+    } finally {
+      if (zone === undefined) delete process.env.TZ; else process.env.TZ = zone;
+    }
+  });
+
+  it("holder to brugeres statistik adskilt, også på samme ord og kategori", () => {
+    const mine = game("alice", "dyr", "let", 5);
+    const theirs = game("bob", "dyr", "let", 5);
+    complete("alice", mine);
+    play("bob", theirs, [find(theirs, theirs.words[0])]);
+    // Bob cannot sync events into Alice's game.
+    expect(() => play("bob", mine, [find(mine, mine.words[0])])).toThrow("Banen blev ikke fundet.");
+    expect(statsForUser(db, "alice")).toMatchObject({ completed: 1, found: mine.words.length, byCategory: [{ category: "dyr", completed: 1, found: mine.words.length }] });
+    expect(statsForUser(db, "bob")).toMatchObject({ completed: 0, found: 1, byCategory: [{ category: "dyr", completed: 0, found: 1 }] });
+  });
+
   it("tæller kampagnebaner, kategorier, baner uden hint og længste forløb uden opgivelse", () => {
     db.prepare("INSERT INTO campaign (id, user_id, level) VALUES ('kamp', 'alice', 'let')").run();
     const queue = db.prepare("INSERT INTO campaign_game (campaign_id, position, game_id, retired) VALUES ('kamp', ?, ?, ?)");

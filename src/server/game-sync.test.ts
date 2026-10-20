@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { applyGameEvents, loadGameForUser, type GameRow } from "./game-sync.js";
+import { applyGameEvents, loadGameForUser, type GameRow, type SyncEvent } from "./game-sync.js";
 import { migrateGameData } from "./migrations.js";
 import { findWord, HINT_LIMIT, makePuzzle, type Move, type Puzzle } from "../shared/game.js";
 import { CATEGORIES, availableLevels, type CategoryId, type LevelId } from "../shared/words.js";
@@ -102,6 +102,32 @@ describe("serverens hintbudget", () => {
     db.prepare("UPDATE game SET hints = ? WHERE id = ?").run(JSON.stringify(previous), puzzle.id);
     expect(apply(puzzle.id, [event("hint", puzzle.words[2])]).rejected[0]?.error).toBe("Alle hints på denne bane er brugt.");
     expect(JSON.parse(row(puzzle.id).hints)).toEqual(previous);
+  });
+
+  it("gemmer klientens sekvens og tidspunkt adskilt fra servertiden", () => {
+    const puzzle = insertPuzzle("let");
+    const word = puzzle.words[0];
+    const clientAt = Date.UTC(2026, 0, 2, 3, 4, 5);
+    apply(puzzle.id, [{ ...event("find", word), ...findWord(puzzle, word)!, sequence: 7, createdAt: clientAt } as SyncEvent, event("hint", puzzle.words[1])]);
+    const stored = db.prepare("SELECT kind, client_sequence, client_at, created_at FROM game_event ORDER BY rowid").all() as Array<Record<string, unknown>>;
+    expect(stored[0]).toMatchObject({ kind: "find", client_sequence: 7, client_at: "2026-01-02T03:04:05.000Z" });
+    expect(stored[0].created_at).not.toBe(stored[0].client_at);
+    expect(stored[1]).toMatchObject({ kind: "hint", client_sequence: null, client_at: null });
+  });
+
+  it("ruller hele batchen tilbage ved en uventet fejl", () => {
+    const puzzle = insertPuzzle("let");
+    db.prepare("INSERT INTO hint_credit (user_id, ref, delta) VALUES ('alice', 'test', 10)").run();
+    const word = puzzle.words[0];
+    const find = { ...event("find", word), ...findWord(puzzle, word)! };
+    // A trigger makes the hint insert fail after the find in the same batch was written.
+    db.exec("CREATE TRIGGER fail_hint BEFORE INSERT ON game_event WHEN NEW.kind = 'hint' BEGIN SELECT RAISE(ABORT, 'disk fuld'); END");
+    expect(() => apply(puzzle.id, [find, event("hint", puzzle.words[1])])).toThrow("disk fuld");
+    expect(row(puzzle.id)).toMatchObject({ found: "[]", hints: "[]", revision: 0 });
+    expect((db.prepare("SELECT COUNT(*) AS count FROM game_event").get() as { count: number }).count).toBe(0);
+    expect((db.prepare("SELECT COUNT(*) AS count FROM hint_credit WHERE ref LIKE 'hint:%'").get() as { count: number }).count).toBe(0);
+    db.exec("DROP TRIGGER fail_hint");
+    expect(apply(puzzle.id, [find]).found).toEqual([word]);
   });
 
   it("holder to brugeres baner og hændelser adskilt", () => {

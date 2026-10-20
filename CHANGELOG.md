@@ -1,5 +1,11 @@
 # Udgivelser
 
+## Ikke udgivet
+
+### Data
+
+- Serveren gemmer enhedens rækkefølge og tidspunkt for hvert træk adskilt fra servertiden (databasemigration 10). Opbevaringspolitikken for spildata står i [arkitektur- og API-beskrivelsen](docs/arkitektur-og-api.md#opbevaring-og-genberegning) ([TEA-35](https://linear.app/team-vre/issue/TEA-35)).
+
 ## 0.2.0 – 2026-10-19
 
 Nyt udseende efter redesignet i Claude Design ([TEA-66](https://linear.app/team-vre/issue/TEA-66)). Stadig en forudgivelse: test på fysiske enheder mangler ([TEA-48](https://linear.app/team-vre/issue/TEA-48)).

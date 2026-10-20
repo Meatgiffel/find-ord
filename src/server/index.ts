@@ -15,9 +15,9 @@ import { achievementsForUser, statsForUser } from "./achievements.js";
 import { challengeState } from "./challenges.js";
 import { campaignNeeds, campaignsForUser, refillCampaign, startCampaign } from "./campaigns.js";
 import { PuzzleSupply, SupplyBusyError, workerGenerator } from "./supply.js";
-import { applyGameEvents, loadGameForUser, type GameRow } from "./game-sync.js";
+import { applyGameEvents, loadGameForUser, type GameRow, type SyncEvent } from "./game-sync.js";
 import { AVATARS, CATEGORIES, CATEGORY_TAG_VERSION, LEVELS, WORD_LIST_VERSION, adultOnlyReason, availableLevels, campaignLevels, categoryWords, readingLevel, type CategoryId, type LevelId } from "../shared/words.js";
-import type { Move, Puzzle } from "../shared/game.js";
+import type { Puzzle } from "../shared/game.js";
 import { VALIDATION_VERSION, validatePuzzle } from "../shared/validation.js";
 import { BLOCKED_SEQUENCES, CHILD_POLICY_VERSION } from "../shared/safety.js";
 
@@ -283,7 +283,9 @@ const eventSchema = z.object({
   kind: z.enum(["find", "hint", "complete", "abandon"]),
   word: z.string().optional(),
   start: point.optional(),
-  end: point.optional()
+  end: point.optional(),
+  sequence: z.number().int().positive().optional(),
+  createdAt: z.number().int().min(0).max(8.64e15).optional()
 });
 app.post("/api/games/:id/sync", async (req, res) => {
   const current = await user(req, res); if (!current) return;
@@ -295,7 +297,7 @@ app.post("/api/games/:id/sync", async (req, res) => {
   // offline progress is not lost. Events are checked against the stored grid and
   // sync returns no puzzle content.
   try {
-    res.json(applyGameEvents(db, row, current.id, parsed.data.events as Move[]));
+    res.json(applyGameEvents(db, row, current.id, parsed.data.events as SyncEvent[]));
   } catch (cause) {
     return error(res, 409, cause instanceof Error ? cause.message : "Synkronisering mislykkedes.");
   }

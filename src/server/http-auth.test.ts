@@ -179,7 +179,7 @@ describe("HTTP-adgangskontrol", () => {
       expect((await adminCall("remove-user", { userId: ids.kid })).status).toBe(200);
       const check = new Database(join(directory, "test.sqlite"), { readonly: true });
       const rowsFor = (table: string, column: string, id: string) => (check.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE ${column} = ?`).get(id) as { count: number }).count;
-      for (const [table, column] of [["user", "id"], ["session", "userId"], ["account", "userId"], ["profile", "user_id"], ["game", "user_id"], ["game_event", "user_id"], ["achievement_award", "user_id"]]) {
+      for (const [table, column] of [["user", "id"], ["session", "userId"], ["account", "userId"], ["profile", "user_id"], ["game", "user_id"], ["game_event", "user_id"], ["achievement_award", "user_id"], ["challenge", "user_id"], ["hint_credit", "user_id"], ["campaign", "user_id"]]) {
         expect(rowsFor(table, column, ids.kid)).toBe(0);
       }
       expect(rowsFor("game", "user_id", ids.alice)).toBeGreaterThan(0);

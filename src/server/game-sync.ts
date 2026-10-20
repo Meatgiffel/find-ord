@@ -7,6 +7,10 @@ export type GameRow = { id: string; user_id: string; category: string; level: st
 export type GameState = { found: string[]; hints: string[]; completed: boolean; abandoned: boolean; revision: number };
 export type SyncResult = GameState & { acknowledged: string[]; rejected: Array<{ id: string; error: string }> };
 
+// Client metadata for an event: its position in the device's outbox and the device's
+// clock (ms since epoch) when the move was made.
+export type SyncEvent = Move & { sequence?: number; createdAt?: number };
+
 export class GameSyncError extends Error {}
 
 export const NO_CREDITS = "Der var ingen hintkreditter tilbage, da hintet blev synkroniseret. Klar et mål på forsiden for at få flere.";
@@ -20,7 +24,7 @@ type StoredEvent = { game_id: string; user_id: string; kind: string; word: strin
 // Each event is acknowledged (stored now or earlier, or a no-op) or rejected with a reason.
 // Valid events are kept even when others in the same batch are rejected, so one bad
 // offline move cannot block the rest of the outbox.
-export function applyGameEvents(db: Database.Database, row: GameRow, userId: string, events: Move[]): SyncResult {
+export function applyGameEvents(db: Database.Database, row: GameRow, userId: string, events: SyncEvent[]): SyncResult {
   if (row.user_id !== userId) throw new GameSyncError("Banen blev ikke fundet.");
   const puzzle = JSON.parse(row.puzzle) as Puzzle;
   const found = new Set(JSON.parse(row.found) as string[]);
@@ -68,8 +72,9 @@ export function applyGameEvents(db: Database.Database, row: GameRow, userId: str
       else if (event.kind === "hint") hints.add(event.word!);
       else if (event.kind === "abandon") abandoned = true;
       else completed = true;
-      db.prepare("INSERT INTO game_event (id, game_id, user_id, kind, word) VALUES (?, ?, ?, ?, ?)")
-        .run(event.id, row.id, userId, event.kind, event.word ?? null);
+      db.prepare("INSERT INTO game_event (id, game_id, user_id, kind, word, client_sequence, client_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+        .run(event.id, row.id, userId, event.kind, event.word ?? null, event.sequence ?? null,
+          event.createdAt === undefined ? null : new Date(event.createdAt).toISOString());
       acknowledged.push(event.id);
       applied++;
     }
